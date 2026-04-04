@@ -150,14 +150,37 @@ const CREDENTIAL_FIELDS: Record<string, string[]> = {
   bluebubbles: ['url'],
 };
 
+const ALL_KNOWN_CHANNELS = new Set([
+  'whatsapp', 'telegram', 'slack', 'discord', 'signal',
+  'imessage', 'matrix', 'irc', 'msteams', 'feishu',
+  'googlechat', 'mattermost', 'zalo', 'bluebubbles',
+]);
+
 function detectChannels(
   config: Record<string, unknown>,
 ): ChannelInfo[] {
-  const channels =
-    (config.channels as Record<string, unknown> | undefined) ?? {};
+  // Check both config.channels.* (newer) and top-level config.* (older/legacy)
+  const channelsSections: Record<string, unknown> = {};
+
+  // Source 1: channels.* (standard location)
+  const nested = config.channels as Record<string, unknown> | undefined;
+  if (nested) {
+    for (const [k, v] of Object.entries(nested)) {
+      if (v && typeof v === 'object') channelsSections[k] = v;
+    }
+  }
+
+  // Source 2: top-level keys matching known channel names (legacy format)
+  for (const key of Object.keys(config)) {
+    if (ALL_KNOWN_CHANNELS.has(key) && !channelsSections[key]) {
+      const v = config[key];
+      if (v && typeof v === 'object') channelsSections[key] = v;
+    }
+  }
+
   const results: ChannelInfo[] = [];
 
-  for (const [name, section] of Object.entries(channels)) {
+  for (const [name, section] of Object.entries(channelsSections)) {
     if (!section || typeof section !== 'object') continue;
     const ch = section as Record<string, unknown>;
 
@@ -220,13 +243,26 @@ const WORKSPACE_FILES = [
   'AGENTS.md',
 ];
 
-function findWorkspace(stateDir: string): {
+function findWorkspace(stateDir: string, config: Record<string, unknown> | null): {
   dir: string | null;
   files: string[];
 } {
-  // Check default workspace locations (workspace/ then workspace.default/ fallback)
-  for (const wsName of ['workspace', 'workspace.default']) {
-    const ws = path.join(stateDir, wsName);
+  // Check config-specified workspace path first (agent.workspace or agents.defaults.workspace)
+  const configPaths: string[] = [];
+  if (config) {
+    const agentWs = (config.agent as Record<string, unknown> | undefined)?.workspace as string | undefined;
+    if (agentWs) configPaths.push(agentWs.startsWith('~') ? path.join(os.homedir(), agentWs.slice(1)) : agentWs);
+    const defaultsWs = ((config.agents as Record<string, unknown> | undefined)?.defaults as Record<string, unknown> | undefined)?.workspace as string | undefined;
+    if (defaultsWs) configPaths.push(defaultsWs.startsWith('~') ? path.join(os.homedir(), defaultsWs.slice(1)) : defaultsWs);
+  }
+
+  // Check config-specified paths, then default locations
+  const candidates = [
+    ...configPaths,
+    ...['workspace', 'workspace.default'].map((n) => path.join(stateDir, n)),
+  ];
+
+  for (const ws of candidates) {
     if (fs.existsSync(ws) && fs.statSync(ws).isDirectory()) {
       const found = WORKSPACE_FILES.filter((f) =>
         fs.existsSync(path.join(ws, f)),
@@ -568,7 +604,7 @@ function main(): void {
   const config = loadConfig(stateDir);
   const channels = config ? detectChannels(config) : [];
   const { dir: workspaceDir, files: workspaceFiles } =
-    findWorkspace(stateDir);
+    findWorkspace(stateDir, config);
   const identityName = extractIdentityName(stateDir, workspaceDir);
   const agents = detectAgents(stateDir);
   const groups = detectGroups(stateDir, config, agents);
