@@ -11,6 +11,7 @@ import {
 import {
   getAllTasks,
   getDueTasks,
+  getNextDueTime,
   getTaskById,
   logTaskRun,
   updateTask,
@@ -241,6 +242,20 @@ async function runTask(
 }
 
 let schedulerRunning = false;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let loopFn: (() => Promise<void>) | null = null;
+
+/**
+ * Nudge the scheduler to re-check due tasks immediately instead of
+ * waiting for the next poll cycle.  Safe to call at any time — it is
+ * a no-op if the scheduler hasn't started yet.
+ */
+export function nudgeScheduler(): void {
+  if (!loopFn) return;
+  if (pendingTimer) clearTimeout(pendingTimer);
+  pendingTimer = null;
+  loopFn();
+}
 
 export function startSchedulerLoop(deps: SchedulerDependencies): void {
   if (schedulerRunning) {
@@ -272,13 +287,25 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
       logger.error({ err }, 'Error in scheduler loop');
     }
 
-    setTimeout(loop, SCHEDULER_POLL_INTERVAL);
+    // Sleep until the next task is due, capped by the default poll interval.
+    let delay = SCHEDULER_POLL_INTERVAL;
+    const nextDue = getNextDueTime();
+    if (nextDue) {
+      const ms = new Date(nextDue).getTime() - Date.now();
+      // Add a small buffer (500ms) to avoid firing a hair too early.
+      delay = Math.min(delay, Math.max(ms + 500, 1000));
+    }
+    pendingTimer = setTimeout(loop, delay);
   };
 
+  loopFn = loop;
   loop();
 }
 
 /** @internal - for tests only. */
 export function _resetSchedulerLoopForTests(): void {
   schedulerRunning = false;
+  if (pendingTimer) clearTimeout(pendingTimer);
+  pendingTimer = null;
+  loopFn = null;
 }

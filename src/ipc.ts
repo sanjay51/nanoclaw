@@ -8,6 +8,7 @@ import { AvailableGroup } from './container-runner.js';
 import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
+import { nudgeScheduler } from './task-scheduler.js';
 import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
@@ -274,6 +275,7 @@ export async function processTaskIpc(
           'Task created via IPC',
         );
         deps.onTasksChanged();
+        nudgeScheduler();
       }
       break;
 

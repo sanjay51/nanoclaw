@@ -516,6 +516,18 @@ export function getDueTasks(): ScheduledTask[] {
     .all(now) as ScheduledTask[];
 }
 
+/** Return the earliest next_run among active tasks, or null if none. */
+export function getNextDueTime(): string | null {
+  const row = db
+    .prepare(
+      `SELECT next_run FROM scheduled_tasks
+       WHERE status = 'active' AND next_run IS NOT NULL
+       ORDER BY next_run LIMIT 1`,
+    )
+    .get() as { next_run: string } | undefined;
+  return row?.next_run ?? null;
+}
+
 export function updateTaskAfterRun(
   id: string,
   nextRun: string | null,
