@@ -89,9 +89,7 @@ export class WebChannel implements Channel {
     }
     this.clients = [];
     if (this.server) {
-      await new Promise<void>((resolve) =>
-        this.server!.close(() => resolve()),
-      );
+      await new Promise<void>((resolve) => this.server!.close(() => resolve()));
       this.server = null;
       logger.info('Web channel stopped');
     }
@@ -289,6 +287,21 @@ function buildHTML(): string {
     --sidebar-w: 280px;
   }
 
+  :root.light {
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --surface2: #f0f0f0;
+    --border: #e0e0e0;
+    --border-light: #d5d5d5;
+    --text: #1a1a1a;
+    --text-dim: #666;
+    --text-muted: #999;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --user-bg: #dbeafe;
+    --bot-bg: #ffffff;
+  }
+
   html, body { height: 100%; }
 
   body {
@@ -324,11 +337,25 @@ function buildHTML(): string {
     letter-spacing: -0.02em;
   }
 
+  .sidebar-header .spacer { flex: 1; }
+
   .sidebar-header .version {
     font-size: 11px;
     color: var(--text-muted);
-    margin-left: auto;
   }
+
+  .theme-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px 6px;
+    font-size: 14px;
+    line-height: 1;
+    transition: background 0.15s, color 0.15s;
+  }
+  .theme-toggle:hover { background: var(--surface2); color: var(--text); }
 
   .section {
     padding: 12px 16px 8px;
@@ -583,7 +610,9 @@ function buildHTML(): string {
 <div id="sidebar">
   <div class="sidebar-header">
     <h1>${ASSISTANT_NAME}</h1>
+    <div class="spacer"></div>
     <span class="version">NanoClaw</span>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark theme">&#9788;</button>
   </div>
 
   <div class="section" id="sec-channels">
@@ -822,6 +851,20 @@ function buildHTML(): string {
 
   refreshSidebar();
   setInterval(refreshSidebar, 10000);
+
+  // ---- Theme toggle ----
+  const themeBtn = document.getElementById('theme-toggle');
+  const root = document.documentElement;
+  const saved = localStorage.getItem('nanoclaw-theme');
+  if (saved === 'light') root.classList.add('light');
+
+  themeBtn.addEventListener('click', () => {
+    root.classList.toggle('light');
+    const isLight = root.classList.contains('light');
+    localStorage.setItem('nanoclaw-theme', isLight ? 'light' : 'dark');
+    themeBtn.innerHTML = isLight ? '&#9790;' : '&#9788;';
+  });
+  if (saved === 'light') themeBtn.innerHTML = '&#9790;';
 })();
 </script>
 </body>
