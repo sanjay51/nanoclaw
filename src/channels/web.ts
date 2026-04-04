@@ -2,9 +2,17 @@ import http from 'http';
 import { randomUUID } from 'crypto';
 
 import { ASSISTANT_NAME } from '../config.js';
-import { getAllRegisteredGroups, getAllTasks, getAllChats } from '../db.js';
+import {
+  deleteTask,
+  getAllRegisteredGroups,
+  getAllTasks,
+  getAllChats,
+  getTaskById,
+  updateTask,
+} from '../db.js';
 import { readEnvFile } from '../env.js';
 import { logger } from '../logger.js';
+import { nudgeScheduler } from '../task-scheduler.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
   Channel,
@@ -109,7 +117,10 @@ export class WebChannel implements Channel {
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
 
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Methods',
+      'GET, POST, PATCH, DELETE, OPTIONS',
+    );
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
@@ -117,6 +128,9 @@ export class WebChannel implements Channel {
       res.end();
       return;
     }
+
+    // Match /api/tasks/:id
+    const taskMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
 
     if (url.pathname === '/' && req.method === 'GET') {
       this.serveUI(res);
@@ -126,6 +140,12 @@ export class WebChannel implements Channel {
       this.handleMessage(req, res);
     } else if (url.pathname === '/api/status' && req.method === 'GET') {
       this.handleStatus(res);
+    } else if (taskMatch && req.method === 'GET') {
+      this.handleGetTask(taskMatch[1], res);
+    } else if (taskMatch && req.method === 'PATCH') {
+      this.handleUpdateTask(taskMatch[1], req, res);
+    } else if (taskMatch && req.method === 'DELETE') {
+      this.handleDeleteTask(taskMatch[1], res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -198,31 +218,119 @@ export class WebChannel implements Channel {
     });
   }
 
-  private handleStatus(res: http.ServerResponse): void {
-    const channels = this.getChannels().map((ch) => ({
-      name: ch.name,
-      connected: ch.isConnected(),
-    }));
+  private handleGetTask(id: string, res: http.ServerResponse): void {
+    const task = getTaskById(id);
+    if (!task) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Task not found' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(task));
+  }
 
+  private handleUpdateTask(
+    id: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const task = getTaskById(id);
+        if (!task) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Task not found' }));
+          return;
+        }
+
+        const data = JSON.parse(body);
+        const allowed = [
+          'prompt',
+          'schedule_type',
+          'schedule_value',
+          'status',
+        ] as const;
+        const updates: Record<string, unknown> = {};
+        for (const key of allowed) {
+          if (data[key] !== undefined) updates[key] = data[key];
+        }
+
+        if (Object.keys(updates).length === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No valid fields to update' }));
+          return;
+        }
+
+        updateTask(id, updates);
+        nudgeScheduler();
+        const updated = getTaskById(id);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(updated));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleDeleteTask(id: string, res: http.ServerResponse): void {
+    const task = getTaskById(id);
+    if (!task) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Task not found' }));
+      return;
+    }
+    deleteTask(id);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  }
+
+  private handleStatus(res: http.ServerResponse): void {
     const groups = getAllRegisteredGroups();
+
+    const channels = this.getChannels().map((ch) => {
+      // Find groups owned by this channel
+      const channelGroups = Object.entries(groups)
+        .filter(([jid]) => ch.ownsJid(jid))
+        .map(([jid, g]) => ({
+          jid,
+          name: g.name,
+          folder: g.folder,
+          isMain: g.isMain || false,
+          trigger: g.trigger,
+          requiresTrigger: g.requiresTrigger !== false,
+        }));
+      return {
+        name: ch.name,
+        connected: ch.isConnected(),
+        groups: channelGroups,
+      };
+    });
+
     const groupList = Object.entries(groups).map(([jid, g]) => ({
       jid,
       name: g.name,
       folder: g.folder,
       isMain: g.isMain || false,
+      trigger: g.trigger,
       requiresTrigger: g.requiresTrigger !== false,
     }));
 
     const tasks = getAllTasks();
     const taskList = tasks.map((t) => ({
       id: t.id,
-      prompt: t.prompt.slice(0, 80),
+      prompt: t.prompt,
       group: t.group_folder,
+      chatJid: t.chat_jid,
       type: t.schedule_type,
       value: t.schedule_value,
+      contextMode: t.context_mode,
       status: t.status,
       nextRun: t.next_run,
       lastRun: t.last_run,
+      lastResult: t.last_result ? t.last_result.slice(0, 200) : null,
     }));
 
     const chats = getAllChats();
@@ -379,8 +487,10 @@ function buildHTML(): string {
     font-size: 13px;
     color: var(--text-dim);
     transition: background 0.1s;
+    cursor: pointer;
   }
   .item:hover { background: var(--surface2); }
+  .item.selected { background: var(--surface2); color: var(--text); }
 
   .item .dot {
     width: 6px; height: 6px;
@@ -433,6 +543,13 @@ function buildHTML(): string {
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+
+  #chat-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   header {
@@ -599,6 +716,178 @@ function buildHTML(): string {
   #input-area button:hover { background: var(--accent-hover); }
   #input-area button:disabled { opacity: 0.4; cursor: default; }
 
+  /* ---- Detail panel (overlays main area) ---- */
+  #detail-panel {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+  }
+  #detail-panel.visible { display: flex; }
+  #chat-view.hidden { display: none; }
+
+  .detail-header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .detail-header .back-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px 10px;
+    font-size: 13px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .detail-header .back-btn:hover { background: var(--surface2); color: var(--text); }
+
+  .detail-header h2 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .detail-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+  }
+
+  .detail-section {
+    margin-bottom: 20px;
+  }
+
+  .detail-section h3 {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .detail-field {
+    margin-bottom: 14px;
+  }
+
+  .detail-field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  .detail-field input,
+  .detail-field select,
+  .detail-field textarea {
+    width: 100%;
+    max-width: 500px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    outline: none;
+  }
+  .detail-field input:focus,
+  .detail-field select:focus,
+  .detail-field textarea:focus {
+    border-color: var(--accent);
+  }
+
+  .detail-field textarea {
+    min-height: 80px;
+    resize: vertical;
+    font-family: var(--mono);
+    line-height: 1.5;
+  }
+
+  .detail-field .value {
+    font-size: 13px;
+    color: var(--text);
+    padding: 6px 0;
+  }
+
+  .detail-field .value.mono {
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+
+  .detail-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    padding: 7px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.danger { color: var(--red); border-color: rgba(239,68,68,0.3); }
+  .btn.danger:hover { background: rgba(239,68,68,0.1); }
+
+  .info-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--surface2);
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+
+  .info-row .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .info-row .label { flex: 1; }
+  .info-row .meta {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 10px 18px;
+    border-radius: var(--radius);
+    background: var(--green);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 100;
+    pointer-events: none;
+  }
+  .toast.visible { opacity: 1; transform: translateY(0); }
+  .toast.error { background: var(--red); }
+
   @media (max-width: 720px) {
     #sidebar { display: none; }
   }
@@ -642,29 +931,43 @@ function buildHTML(): string {
   </div>
 </div>
 
-<!-- Main chat -->
+<!-- Main area -->
 <div id="main">
-  <header>
-    <div class="dot" id="dot"></div>
-    <h2>Web Chat</h2>
-    <span class="status" id="status">connecting...</span>
-  </header>
+  <!-- Chat view (default) -->
+  <div id="chat-view">
+    <header>
+      <div class="dot" id="dot"></div>
+      <h2>Web Chat</h2>
+      <span class="status" id="status">connecting...</span>
+    </header>
 
-  <div id="messages">
-    <div class="empty-state" id="empty">Send a message to start chatting.</div>
+    <div id="messages">
+      <div class="empty-state" id="empty">Send a message to start chatting.</div>
+    </div>
+
+    <div class="typing" id="typing">
+      <span>.</span><span>.</span><span>.</span> thinking
+    </div>
+
+    <div id="input-area">
+      <form id="form">
+        <textarea id="input" rows="1" placeholder="Message ${ASSISTANT_NAME}..." autofocus></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </div>
   </div>
 
-  <div class="typing" id="typing">
-    <span>.</span><span>.</span><span>.</span> thinking
-  </div>
-
-  <div id="input-area">
-    <form id="form">
-      <textarea id="input" rows="1" placeholder="Message ${ASSISTANT_NAME}..." autofocus></textarea>
-      <button type="submit">Send</button>
-    </form>
+  <!-- Detail panel (shown when clicking sidebar items) -->
+  <div id="detail-panel">
+    <div class="detail-header">
+      <button class="back-btn" id="detail-back">&larr; Back</button>
+      <h2 id="detail-title"></h2>
+    </div>
+    <div class="detail-body" id="detail-body"></div>
   </div>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script>
 (function() {
@@ -674,7 +977,43 @@ function buildHTML(): string {
   const form = document.getElementById('form');
   const input = document.getElementById('input');
   const dot = document.getElementById('dot');
-  const status = document.getElementById('status');
+  const statusEl = document.getElementById('status');
+  const chatView = document.getElementById('chat-view');
+  const detailPanel = document.getElementById('detail-panel');
+  const detailBack = document.getElementById('detail-back');
+  const detailTitle = document.getElementById('detail-title');
+  const detailBody = document.getElementById('detail-body');
+  const toastEl = document.getElementById('toast');
+
+  // Cached status data for panel rendering
+  let statusData = { channels: [], groups: [], tasks: [], chats: [] };
+
+  // ---- Toast ----
+
+  let toastTimer = null;
+  function toast(msg, isError) {
+    toastEl.textContent = msg;
+    toastEl.className = 'toast visible' + (isError ? ' error' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.className = 'toast'; }, 2500);
+  }
+
+  // ---- Panel management ----
+
+  function showChat() {
+    chatView.classList.remove('hidden');
+    detailPanel.classList.remove('visible');
+    document.querySelectorAll('#sidebar .item.selected').forEach(el => el.classList.remove('selected'));
+  }
+
+  function showDetail(title, html) {
+    chatView.classList.add('hidden');
+    detailPanel.classList.add('visible');
+    detailTitle.textContent = title;
+    detailBody.innerHTML = html;
+  }
+
+  detailBack.addEventListener('click', showChat);
 
   // ---- Chat ----
 
@@ -719,6 +1058,8 @@ function buildHTML(): string {
     addMsg(text, 'user');
     input.value = '';
     input.style.height = 'auto';
+    // Switch to chat view if detail panel is open
+    showChat();
     try {
       const res = await fetch('/api/message', {
         method: 'POST',
@@ -740,7 +1081,7 @@ function buildHTML(): string {
     const es = new EventSource('/api/events');
     es.onopen = () => {
       dot.classList.add('connected');
-      status.textContent = 'connected';
+      statusEl.textContent = 'connected';
     };
     es.onmessage = (e) => {
       try {
@@ -748,6 +1089,8 @@ function buildHTML(): string {
         if (data.type === 'message') {
           typing.classList.remove('visible');
           addMsg(data.text, 'bot');
+          // Switch to chat if a message arrives while viewing detail
+          if (detailPanel.classList.contains('visible')) showChat();
         } else if (data.type === 'typing') {
           if (data.isTyping) {
             typing.classList.add('visible');
@@ -760,36 +1103,187 @@ function buildHTML(): string {
     };
     es.onerror = () => {
       dot.classList.remove('connected');
-      status.textContent = 'reconnecting...';
+      statusEl.textContent = 'reconnecting...';
       es.close();
       setTimeout(connectSSE, 2000);
     };
   }
   connectSSE();
 
-  // ---- Sidebar ----
+  // ---- Helpers ----
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
 
   function relTime(iso) {
     if (!iso) return 'never';
     const d = new Date(iso);
     const now = Date.now();
     const diff = now - d.getTime();
+    if (diff < 0) return 'in ' + humanDuration(-diff);
     if (diff < 60000) return 'just now';
-    if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
-    if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
-    return Math.floor(diff/86400000) + 'd ago';
+    return humanDuration(diff) + ' ago';
   }
+
+  function humanDuration(ms) {
+    if (ms < 60000) return Math.floor(ms / 1000) + 's';
+    if (ms < 3600000) return Math.floor(ms / 60000) + 'm';
+    if (ms < 86400000) return Math.floor(ms / 3600000) + 'h';
+    return Math.floor(ms / 86400000) + 'd';
+  }
+
+  // ---- Channel detail panel ----
+
+  function showChannelDetail(ch) {
+    const groupsHtml = (ch.groups || []).length
+      ? ch.groups.map(g =>
+          '<div class="info-row">' +
+            '<div class="dot ' + (g.isMain ? 'green' : 'dim') + '"></div>' +
+            '<span class="label">' + esc(g.name) + '</span>' +
+            (g.isMain ? '<span class="meta">main</span>' : '') +
+          '</div>' +
+          '<div style="padding: 2px 0 8px 14px; font-size: 12px; color: var(--text-muted);">' +
+            'Folder: <code>' + esc(g.folder) + '</code>' +
+            (g.trigger ? ' &middot; Trigger: <code>' + esc(g.trigger) + '</code>' : '') +
+            ' &middot; Requires trigger: ' + (g.requiresTrigger ? 'yes' : 'no') +
+          '</div>'
+        ).join('')
+      : '<div class="empty-hint">No groups registered on this channel</div>';
+
+    const html =
+      '<div class="detail-section">' +
+        '<h3>Status</h3>' +
+        '<div class="info-row">' +
+          '<div class="dot ' + (ch.connected ? 'green' : 'red') + '"></div>' +
+          '<span class="label">' + (ch.connected ? 'Connected' : 'Disconnected') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="detail-section">' +
+        '<h3>Groups</h3>' +
+        groupsHtml +
+      '</div>';
+
+    showDetail(ch.name.charAt(0).toUpperCase() + ch.name.slice(1) + ' Channel', html);
+  }
+
+  // ---- Task detail / edit panel ----
+
+  function showTaskDetail(task) {
+    const html =
+      '<div class="detail-section">' +
+        '<h3>Task Details</h3>' +
+        '<div class="detail-field">' +
+          '<label>Prompt</label>' +
+          '<textarea id="edit-prompt">' + esc(task.prompt) + '</textarea>' +
+        '</div>' +
+        '<div class="detail-field">' +
+          '<label>Schedule Type</label>' +
+          '<select id="edit-type">' +
+            '<option value="cron"' + (task.type === 'cron' ? ' selected' : '') + '>Cron</option>' +
+            '<option value="interval"' + (task.type === 'interval' ? ' selected' : '') + '>Interval (ms)</option>' +
+            '<option value="once"' + (task.type === 'once' ? ' selected' : '') + '>Once</option>' +
+          '</select>' +
+        '</div>' +
+        '<div class="detail-field">' +
+          '<label>Schedule Value</label>' +
+          '<input id="edit-value" type="text" value="' + esc(task.value) + '">' +
+        '</div>' +
+        '<div class="detail-field">' +
+          '<label>Status</label>' +
+          '<select id="edit-status">' +
+            '<option value="active"' + (task.status === 'active' ? ' selected' : '') + '>Active</option>' +
+            '<option value="paused"' + (task.status === 'paused' ? ' selected' : '') + '>Paused</option>' +
+          '</select>' +
+        '</div>' +
+      '</div>' +
+      '<div class="detail-section">' +
+        '<h3>Info</h3>' +
+        '<div class="detail-field">' +
+          '<label>ID</label>' +
+          '<div class="value mono">' + esc(task.id) + '</div>' +
+        '</div>' +
+        '<div class="detail-field">' +
+          '<label>Group</label>' +
+          '<div class="value">' + esc(task.group) + '</div>' +
+        '</div>' +
+        '<div class="detail-field">' +
+          '<label>Context Mode</label>' +
+          '<div class="value">' + esc(task.contextMode || 'isolated') + '</div>' +
+        '</div>' +
+        (task.nextRun ? '<div class="detail-field"><label>Next Run</label><div class="value">' + esc(new Date(task.nextRun).toLocaleString()) + ' (' + relTime(task.nextRun) + ')</div></div>' : '') +
+        (task.lastRun ? '<div class="detail-field"><label>Last Run</label><div class="value">' + relTime(task.lastRun) + '</div></div>' : '') +
+        (task.lastResult ? '<div class="detail-field"><label>Last Result</label><div class="value mono" style="white-space:pre-wrap;max-height:120px;overflow:auto;">' + esc(task.lastResult) + '</div></div>' : '') +
+      '</div>' +
+      '<div class="detail-actions">' +
+        '<button class="btn primary" id="save-task">Save Changes</button>' +
+        '<button class="btn danger" id="delete-task">Delete Task</button>' +
+      '</div>';
+
+    showDetail('Edit Task', html);
+
+    // Wire up save
+    document.getElementById('save-task').addEventListener('click', async () => {
+      const body = {
+        prompt: document.getElementById('edit-prompt').value,
+        schedule_type: document.getElementById('edit-type').value,
+        schedule_value: document.getElementById('edit-value').value,
+        status: document.getElementById('edit-status').value,
+      };
+      try {
+        const res = await fetch('/api/tasks/' + encodeURIComponent(task.id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) {
+          toast('Task updated');
+          refreshSidebar();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          toast(err.error || 'Update failed', true);
+        }
+      } catch { toast('Network error', true); }
+    });
+
+    // Wire up delete
+    document.getElementById('delete-task').addEventListener('click', async () => {
+      if (!confirm('Delete this task? This cannot be undone.')) return;
+      try {
+        const res = await fetch('/api/tasks/' + encodeURIComponent(task.id), { method: 'DELETE' });
+        if (res.ok) {
+          toast('Task deleted');
+          showChat();
+          refreshSidebar();
+        } else {
+          toast('Delete failed', true);
+        }
+      } catch { toast('Network error', true); }
+    });
+  }
+
+  // ---- Sidebar rendering ----
 
   function renderChannels(channels) {
     const el = document.getElementById('channel-list');
     if (!channels.length) { el.innerHTML = '<div class="empty-hint">None</div>'; return; }
-    el.innerHTML = channels.map(ch =>
-      '<div class="item">' +
+    el.innerHTML = channels.map((ch, i) =>
+      '<div class="item" data-channel="' + i + '">' +
         '<div class="dot ' + (ch.connected ? 'green' : 'red') + '"></div>' +
         '<span class="label">' + esc(ch.name) + '</span>' +
         '<span class="badge">' + (ch.connected ? 'online' : 'offline') + '</span>' +
       '</div>'
     ).join('');
+    el.querySelectorAll('.item[data-channel]').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('#sidebar .item.selected').forEach(el => el.classList.remove('selected'));
+        item.classList.add('selected');
+        const ch = channels[parseInt(item.dataset.channel)];
+        showChannelDetail(ch);
+      });
+    });
   }
 
   function renderGroups(groups) {
@@ -807,16 +1301,24 @@ function buildHTML(): string {
   function renderTasks(tasks) {
     const el = document.getElementById('task-list');
     if (!tasks.length) { el.innerHTML = '<div class="empty-hint">No scheduled tasks</div>'; return; }
-    el.innerHTML = tasks.map(t =>
-      '<div class="item">' +
+    el.innerHTML = tasks.map((t, i) =>
+      '<div class="item" data-task="' + i + '">' +
         '<div class="dot ' + (t.status === 'active' ? 'green' : t.status === 'paused' ? 'yellow' : 'dim') + '"></div>' +
-        '<span class="label">' + esc(t.prompt) + '</span>' +
+        '<span class="label">' + esc(t.prompt.length > 60 ? t.prompt.slice(0, 60) + '...' : t.prompt) + '</span>' +
         '<span class="badge ' + t.status + '">' + t.status + '</span>' +
       '</div>' +
       '<div class="task-meta">' + t.type + ': ' + esc(t.value) +
         (t.nextRun ? ' &middot; next ' + relTime(t.nextRun) : '') +
       '</div>'
     ).join('');
+    el.querySelectorAll('.item[data-task]').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('#sidebar .item.selected').forEach(el => el.classList.remove('selected'));
+        item.classList.add('selected');
+        const t = tasks[parseInt(item.dataset.task)];
+        showTaskDetail(t);
+      });
+    });
   }
 
   function renderChats(chats) {
@@ -831,21 +1333,15 @@ function buildHTML(): string {
     ).join('');
   }
 
-  function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s || '';
-    return d.innerHTML;
-  }
-
   async function refreshSidebar() {
     try {
       const res = await fetch('/api/status');
       if (!res.ok) return;
-      const data = await res.json();
-      renderChannels(data.channels || []);
-      renderGroups(data.groups || []);
-      renderTasks(data.tasks || []);
-      renderChats(data.chats || []);
+      statusData = await res.json();
+      renderChannels(statusData.channels || []);
+      renderGroups(statusData.groups || []);
+      renderTasks(statusData.tasks || []);
+      renderChats(statusData.chats || []);
     } catch {}
   }
 
