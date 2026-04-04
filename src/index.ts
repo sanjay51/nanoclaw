@@ -689,6 +689,16 @@ async function main(): Promise<void> {
     channels.push(channel);
     await channel.connect();
   }
+
+  // Give the web channel access to the full channels list for the status sidebar
+  for (const ch of channels) {
+    if ('setChannelsAccessor' in ch) {
+      (ch as import('./channels/web.js').WebChannel).setChannelsAccessor(
+        () => channels,
+      );
+    }
+  }
+
   if (channels.length === 0) {
     logger.fatal('No channels connected');
     process.exit(1);
