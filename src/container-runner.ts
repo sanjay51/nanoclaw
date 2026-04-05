@@ -244,7 +244,10 @@ async function buildContainerArgs(
   args.push('-e', `TZ=${TIMEZONE}`);
 
   // Chrome MCP server URL (accessible via host gateway)
-  args.push('-e', `CHROME_MCP_URL=http://host.docker.internal:${CHROME_MCP_PORT}/mcp`);
+  args.push(
+    '-e',
+    `CHROME_MCP_URL=http://host.docker.internal:${CHROME_MCP_PORT}/mcp`,
+  );
 
   // Bypass proxy for host-local services (Chrome MCP, etc.)
   args.push('-e', 'NO_PROXY=host.docker.internal,localhost,127.0.0.1');

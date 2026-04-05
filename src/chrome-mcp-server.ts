@@ -98,10 +98,7 @@ async function sendToTarget(
 }
 
 /** Evaluate JS in the page and return the stringified result. */
-async function evaluate(
-  expression: string,
-  tabId?: string,
-): Promise<string> {
+async function evaluate(expression: string, tabId?: string): Promise<string> {
   const result = (await sendToTarget(
     'Runtime.evaluate',
     {
@@ -116,9 +113,7 @@ async function evaluate(
   };
 
   if (result.exceptionDetails) {
-    throw new Error(
-      `JS error: ${result.exceptionDetails.text}`,
-    );
+    throw new Error(`JS error: ${result.exceptionDetails.text}`);
   }
   const val = result.result;
   if (val.type === 'undefined') return 'undefined';
@@ -156,7 +151,9 @@ function buildServer(): McpServer {
       // Wait for load
       await sendToTarget('Page.enable', {}, tabId);
       await new Promise((r) => setTimeout(r, 1500));
-      return { content: [{ type: 'text' as const, text: `Navigated to ${url}` }] };
+      return {
+        content: [{ type: 'text' as const, text: `Navigated to ${url}` }],
+      };
     },
   );
 
@@ -202,7 +199,9 @@ function buildServer(): McpServer {
       const html = await evaluate(expr, tabId);
       // Truncate to avoid massive payloads
       const truncated =
-        html.length > 100_000 ? html.slice(0, 100_000) + '\n... (truncated)' : html;
+        html.length > 100_000
+          ? html.slice(0, 100_000) + '\n... (truncated)'
+          : html;
       return { content: [{ type: 'text' as const, text: truncated }] };
     },
   );
@@ -328,26 +327,21 @@ function buildServer(): McpServer {
   );
 
   // -- list_tabs --
-  server.tool(
-    'list_tabs',
-    'List all open browser tabs.',
-    {},
-    async () => {
-      const targets = await getTargets();
-      const pages = targets
-        .filter((t) => t.type === 'page')
-        .map((t) => ({
-          id: t.id,
-          title: t.title,
-          url: t.url,
-        }));
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(pages, null, 2) },
-        ],
-      };
-    },
-  );
+  server.tool('list_tabs', 'List all open browser tabs.', {}, async () => {
+    const targets = await getTargets();
+    const pages = targets
+      .filter((t) => t.type === 'page')
+      .map((t) => ({
+        id: t.id,
+        title: t.title,
+        url: t.url,
+      }));
+    return {
+      content: [
+        { type: 'text' as const, text: JSON.stringify(pages, null, 2) },
+      ],
+    };
+  });
 
   // -- create_tab --
   server.tool(
@@ -444,7 +438,10 @@ function buildServer(): McpServer {
         content: [
           {
             type: 'text' as const,
-            text: messages.length > 0 ? messages.join('\n') : '(no console messages)',
+            text:
+              messages.length > 0
+                ? messages.join('\n')
+                : '(no console messages)',
           },
         ],
       };
@@ -467,7 +464,10 @@ export async function startChromeMcpServer(
   const httpServer = http.createServer();
 
   // Track transports and their paired MCP servers per session
-  const sessions = new Map<string, { transport: StreamableHTTPServerTransport; server: McpServer }>();
+  const sessions = new Map<
+    string,
+    { transport: StreamableHTTPServerTransport; server: McpServer }
+  >();
 
   httpServer.on('request', async (req, res) => {
     // Health check
@@ -479,10 +479,13 @@ export async function startChromeMcpServer(
 
     // MCP endpoint
     if (req.url === '/mcp') {
-      const sessionId =
-        req.headers['mcp-session-id'] as string | undefined;
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
 
-      if (req.method === 'POST' || req.method === 'GET' || req.method === 'DELETE') {
+      if (
+        req.method === 'POST' ||
+        req.method === 'GET' ||
+        req.method === 'DELETE'
+      ) {
         let transport: StreamableHTTPServerTransport;
 
         if (sessionId && sessions.has(sessionId)) {

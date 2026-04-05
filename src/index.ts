@@ -709,7 +709,10 @@ async function main(): Promise<void> {
 
   // Start Chrome MCP server (bridges CDP to containers)
   startChromeMcpServer(CHROME_MCP_PORT, CHROME_CDP_URL).catch((err) =>
-    logger.warn({ err }, 'Chrome MCP server failed to start (Chrome may not be running with --remote-debugging-port)'),
+    logger.warn(
+      { err },
+      'Chrome MCP server failed to start (Chrome may not be running with --remote-debugging-port)',
+    ),
   );
 
   // Start subsystems (independently of connection handler)
