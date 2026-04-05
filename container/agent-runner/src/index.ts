@@ -53,11 +53,85 @@ interface SessionsIndex {
   entries: SessionEntry[];
 }
 
+type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+
 interface SDKUserMessage {
   type: 'user';
-  message: { role: 'user'; content: string };
+  message: { role: 'user'; content: string | ContentBlock[] };
   parent_tool_use_id: null;
   session_id: string;
+}
+
+const IMAGE_REF_PATTERN = /\[(Image|Photo)\]\s*\(([^)]+)\)/g;
+const SUPPORTED_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
+
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimes: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+  };
+  return mimes[ext] || 'image/jpeg';
+}
+
+/**
+ * Parse a prompt for image references and build multimodal content blocks.
+ * Returns a string if no images, or ContentBlock[] if images are found.
+ */
+function buildMultimodalContent(text: string): string | ContentBlock[] {
+  const matches = [...text.matchAll(IMAGE_REF_PATTERN)];
+  if (matches.length === 0) return text;
+
+  const blocks: ContentBlock[] = [];
+
+  // Add any text before the first image
+  let lastIndex = 0;
+  for (const match of matches) {
+    const beforeText = text.slice(lastIndex, match.index).trim();
+    if (beforeText) {
+      blocks.push({ type: 'text', text: beforeText });
+    }
+
+    const filePath = match[2];
+    const ext = path.extname(filePath).toLowerCase();
+
+    if (SUPPORTED_IMAGE_EXTS.has(ext) && fs.existsSync(filePath)) {
+      try {
+        const data = fs.readFileSync(filePath);
+        blocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: getMimeType(filePath),
+            data: data.toString('base64'),
+          },
+        });
+        log(`Loaded image: ${filePath} (${data.length} bytes)`);
+      } catch (err) {
+        log(`Failed to load image ${filePath}: ${err}`);
+        blocks.push({ type: 'text', text: `[Image failed to load: ${filePath}]` });
+      }
+    } else {
+      blocks.push({ type: 'text', text: match[0] });
+    }
+
+    lastIndex = match.index! + match[0].length;
+  }
+
+  // Add any text after the last image
+  const afterText = text.slice(lastIndex).trim();
+  if (afterText) {
+    blocks.push({ type: 'text', text: afterText });
+  }
+
+  return blocks.length === 1 && blocks[0].type === 'text'
+    ? blocks[0].text
+    : blocks;
 }
 
 const IPC_INPUT_DIR = '/workspace/ipc/input';
@@ -74,9 +148,10 @@ class MessageStream {
   private done = false;
 
   push(text: string): void {
+    const content = buildMultimodalContent(text);
     this.queue.push({
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: '',
     });

@@ -503,6 +503,107 @@ Use available_groups.json to find the JID for a group. The folder name must be c
   },
 );
 
+server.tool(
+  'generate_image',
+  `Generate an image from a text prompt using AI. The image is saved to the group's generated/ directory and the path is returned. You can then share the image with the user by referencing the file path.
+
+Supported sizes: 1024x1024, 1792x1024, 1024x1792
+Supported qualities: standard, hd`,
+  {
+    prompt: z.string().describe('Detailed description of the image to generate'),
+    size: z
+      .enum(['1024x1024', '1792x1024', '1024x1792'])
+      .optional()
+      .default('1024x1024')
+      .describe('Image dimensions'),
+    quality: z
+      .enum(['standard', 'hd'])
+      .optional()
+      .default('standard')
+      .describe('Image quality level'),
+  },
+  async (args) => {
+    try {
+      // Use OpenAI DALL-E 3 API for image generation
+      // The proxy injects credentials automatically via HTTPS_PROXY
+      const apiKey = process.env.OPENAI_API_KEY || '';
+      if (!apiKey) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Image generation requires OPENAI_API_KEY to be configured. Ask the user to set it up.',
+            },
+          ],
+        };
+      }
+
+      const response = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'dall-e-3',
+          prompt: args.prompt,
+          n: 1,
+          size: args.size,
+          quality: args.quality,
+          response_format: 'b64_json',
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Image generation failed: ${response.status} ${err.slice(0, 200)}`,
+            },
+          ],
+        };
+      }
+
+      const result = (await response.json()) as {
+        data: Array<{ b64_json: string; revised_prompt?: string }>;
+      };
+      const imageData = result.data[0];
+      const buffer = Buffer.from(imageData.b64_json, 'base64');
+
+      // Save to generated/ directory
+      const genDir = '/workspace/group/generated';
+      fs.mkdirSync(genDir, { recursive: true });
+      const filename = `img_${Date.now()}.png`;
+      const filePath = path.join(genDir, filename);
+      fs.writeFileSync(filePath, buffer);
+
+      const revisedPrompt = imageData.revised_prompt
+        ? `\nRevised prompt: ${imageData.revised_prompt}`
+        : '';
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Image generated and saved to ${filePath} (${buffer.length} bytes)${revisedPrompt}\n\nTo share this image, reference the file path in your response.`,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Image generation error: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

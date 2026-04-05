@@ -21,6 +21,7 @@ import {
   updateTask,
 } from '../db.js';
 import { readEnvFile } from '../env.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import { logger } from '../logger.js';
 import { computeNextRun, nudgeScheduler } from '../task-scheduler.js';
 import { registerChannel, ChannelOpts } from './registry.js';
@@ -237,6 +238,13 @@ export class WebChannel implements Channel {
       this.handleGetChats(res);
     } else if (url.pathname === '/api/groups' && req.method === 'POST') {
       this.handleRegisterGroup(req, res);
+    } else if (url.pathname === '/api/upload' && req.method === 'POST') {
+      this.handleUpload(req, res, url);
+    } else if (
+      url.pathname.startsWith('/api/files/') &&
+      req.method === 'GET'
+    ) {
+      this.handleServeFile(url, res);
     } else if (url.pathname === '/api/logs' && req.method === 'GET') {
       this.handleGetLogs(url, res);
     } else {
@@ -616,9 +624,7 @@ export class WebChannel implements Channel {
         const data = JSON.parse(body);
         if (!data.jid || !data.name || !data.folder) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(
-            JSON.stringify({ error: 'Required: jid, name, folder' }),
-          );
+          res.end(JSON.stringify({ error: 'Required: jid, name, folder' }));
           return;
         }
         const group = {
@@ -635,8 +641,7 @@ export class WebChannel implements Channel {
         res.writeHead(201, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, jid: data.jid }));
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : 'Invalid request';
+        const msg = err instanceof Error ? err.message : 'Invalid request';
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: msg }));
       }
@@ -644,6 +649,166 @@ export class WebChannel implements Channel {
   }
 
   // ---- Logs ----
+
+  // ---- Image upload ----
+
+  private handleUpload(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: URL,
+  ): void {
+    const chatJid = url.searchParams.get('chat_jid') || DEFAULT_JID;
+    const group = this.opts.registeredGroups()[chatJid];
+    if (!group) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Group not registered' }));
+      return;
+    }
+
+    const contentType = req.headers['content-type'] || '';
+    const boundaryMatch = contentType.match(/boundary=(.+)/);
+    if (!boundaryMatch) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing multipart boundary' }));
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      try {
+        const body = Buffer.concat(chunks);
+        const boundary = boundaryMatch[1];
+        const files = parseMultipart(body, boundary);
+
+        if (files.length === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No files uploaded' }));
+          return;
+        }
+
+        const groupDir = resolveGroupFolderPath(group.folder);
+        const attachDir = path.join(groupDir, 'attachments');
+        fs.mkdirSync(attachDir, { recursive: true });
+
+        const saved: Array<{ filename: string; path: string; containerPath: string }> = [];
+        for (const file of files) {
+          // Sanitize filename
+          const safeName = `upload_${Date.now()}_${file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          const destPath = path.join(attachDir, safeName);
+          fs.writeFileSync(destPath, file.data);
+          saved.push({
+            filename: safeName,
+            path: destPath,
+            containerPath: `/workspace/group/attachments/${safeName}`,
+          });
+        }
+
+        // Store as a message with image reference
+        const text = url.searchParams.get('text') || '';
+        const imageRefs = saved
+          .map((f) => `[Image] (${f.containerPath})`)
+          .join('\n');
+        const content = text ? `${text}\n${imageRefs}` : imageRefs;
+        const timestamp = new Date().toISOString();
+
+        if (chatJid.startsWith(JID_PREFIX)) {
+          this.opts.onChatMetadata(
+            chatJid,
+            timestamp,
+            'Web Chat',
+            'web',
+            false,
+          );
+        }
+
+        this.opts.onMessage(chatJid, {
+          id: randomUUID(),
+          chat_jid: chatJid,
+          sender: 'web-user',
+          sender_name: 'You',
+          content,
+          timestamp,
+          is_from_me: false,
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            files: saved.map((f) => ({
+              filename: f.filename,
+              containerPath: f.containerPath,
+            })),
+          }),
+        );
+      } catch (err) {
+        logger.error({ err }, 'Upload error');
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Upload failed' }));
+      }
+    });
+  }
+
+  // ---- File serving (for uploaded/generated images) ----
+
+  private handleServeFile(url: URL, res: http.ServerResponse): void {
+    // URL: /api/files/{folder}/attachments/{filename}
+    const parts = url.pathname.replace('/api/files/', '').split('/');
+    if (parts.length < 2) {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
+    const folder = parts[0];
+    const filePath = parts.slice(1).join('/');
+
+    // Only allow serving from attachments/ and generated/ subdirs
+    if (!filePath.startsWith('attachments/') && !filePath.startsWith('generated/')) {
+      res.writeHead(403);
+      res.end();
+      return;
+    }
+
+    try {
+      const groupDir = resolveGroupFolderPath(folder);
+      const fullPath = path.join(groupDir, filePath);
+
+      // Prevent path traversal
+      if (!fullPath.startsWith(groupDir)) {
+        res.writeHead(403);
+        res.end();
+        return;
+      }
+
+      if (!fs.existsSync(fullPath)) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+
+      const ext = path.extname(fullPath).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.svg': 'image/svg+xml',
+      };
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+      const data = fs.readFileSync(fullPath);
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=86400',
+      });
+      res.end(data);
+    } catch {
+      res.writeHead(500);
+      res.end();
+    }
+  }
 
   private handleGetLogs(url: URL, res: http.ServerResponse): void {
     const lines = parseInt(url.searchParams.get('lines') || '100', 10) || 100;
@@ -743,6 +908,72 @@ export class WebChannel implements Channel {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(buildHTML());
   }
+}
+
+// ---------- Multipart parser ----------
+
+interface MultipartFile {
+  filename: string;
+  contentType: string;
+  data: Buffer;
+}
+
+function parseMultipart(body: Buffer, boundary: string): MultipartFile[] {
+  const files: MultipartFile[] = [];
+  const boundaryBuf = Buffer.from(`--${boundary}`);
+  const endBuf = Buffer.from(`--${boundary}--`);
+
+  let pos = 0;
+  while (pos < body.length) {
+    const start = body.indexOf(boundaryBuf, pos);
+    if (start === -1) break;
+    const next = body.indexOf(boundaryBuf, start + boundaryBuf.length);
+    if (next === -1 && body.indexOf(endBuf, start + boundaryBuf.length) === -1)
+      break;
+
+    const partEnd = next !== -1 ? next : body.length;
+    const part = body.subarray(start + boundaryBuf.length, partEnd);
+
+    // Find header/body separator (double CRLF)
+    const headerEnd = part.indexOf('\r\n\r\n');
+    if (headerEnd === -1) {
+      pos = partEnd;
+      continue;
+    }
+
+    const headers = part.subarray(0, headerEnd).toString('utf-8');
+    const fileData = part.subarray(headerEnd + 4);
+
+    // Check for filename in Content-Disposition
+    const filenameMatch = headers.match(
+      /filename="([^"]+)"|filename=([^\s;]+)/,
+    );
+    if (!filenameMatch) {
+      pos = partEnd;
+      continue;
+    }
+    const filename = filenameMatch[1] || filenameMatch[2];
+    const ctMatch = headers.match(/Content-Type:\s*(\S+)/i);
+    const contentType = ctMatch ? ctMatch[1] : 'application/octet-stream';
+
+    // Trim trailing CRLF
+    let dataEnd = fileData.length;
+    if (
+      dataEnd >= 2 &&
+      fileData[dataEnd - 2] === 0x0d &&
+      fileData[dataEnd - 1] === 0x0a
+    ) {
+      dataEnd -= 2;
+    }
+
+    files.push({
+      filename,
+      contentType,
+      data: Buffer.from(fileData.subarray(0, dataEnd)),
+    });
+    pos = partEnd;
+  }
+  return files;
 }
 
 // ---------- Inline HTML ----------

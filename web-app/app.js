@@ -665,9 +665,11 @@
           '<div class="empty-state" id="chat-empty">Send a message to start chatting.</div>' +
         '</div>' +
         '<div class="typing-indicator" id="chat-typing"><span>.</span><span>.</span><span>.</span> thinking</div>' +
+        '<div id="image-preview" class="image-preview"></div>' +
         '<div class="chat-input">' +
           '<form id="chat-form">' +
-            '<textarea id="chat-input" rows="1" placeholder="Message ' + esc(assistantName) + '..." autofocus></textarea>' +
+            '<label class="file-btn" title="Attach image"><input type="file" id="chat-file" accept="image/*" multiple hidden>&#128247;</label>' +
+            '<textarea id="chat-input" rows="1" placeholder="Message ' + esc(assistantName) + '... (paste or drop images)" autofocus></textarea>' +
             '<button type="submit">Send</button>' +
           '</form>' +
         '</div>' +
@@ -708,6 +710,62 @@
       loadChatHistory();
     });
 
+    // ---- Image handling state ----
+    var pendingFiles = [];
+    var previewDiv = document.getElementById('image-preview');
+    var fileInput = document.getElementById('chat-file');
+
+    function updatePreview() {
+      if (!pendingFiles.length) { previewDiv.innerHTML = ''; previewDiv.style.display = 'none'; return; }
+      previewDiv.style.display = 'flex';
+      previewDiv.innerHTML = pendingFiles.map(function (f, i) {
+        return '<div class="preview-item">' +
+          '<img src="' + URL.createObjectURL(f) + '">' +
+          '<button class="preview-remove" data-idx="' + i + '">&times;</button>' +
+        '</div>';
+      }).join('');
+      previewDiv.querySelectorAll('.preview-remove').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          pendingFiles.splice(parseInt(btn.dataset.idx), 1);
+          updatePreview();
+        });
+      });
+    }
+
+    function addFiles(fileList) {
+      for (var i = 0; i < fileList.length; i++) {
+        if (fileList[i].type.startsWith('image/')) pendingFiles.push(fileList[i]);
+      }
+      updatePreview();
+    }
+
+    // File input
+    fileInput.addEventListener('change', function () { addFiles(fileInput.files); fileInput.value = ''; });
+    document.querySelector('.file-btn').addEventListener('click', function () { fileInput.click(); });
+
+    // Drag and drop
+    messagesDiv.addEventListener('dragover', function (e) { e.preventDefault(); messagesDiv.classList.add('drag-over'); });
+    messagesDiv.addEventListener('dragleave', function () { messagesDiv.classList.remove('drag-over'); });
+    messagesDiv.addEventListener('drop', function (e) {
+      e.preventDefault();
+      messagesDiv.classList.remove('drag-over');
+      if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+    });
+
+    // Paste images
+    chatInputEl.addEventListener('paste', function (e) {
+      var items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      var hasImage = false;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          var file = items[i].getAsFile();
+          if (file) { pendingFiles.push(file); hasImage = true; }
+        }
+      }
+      if (hasImage) { e.preventDefault(); updatePreview(); }
+    });
+
     // Auto-resize textarea
     chatInputEl.addEventListener('input', function () {
       chatInputEl.style.height = 'auto';
@@ -724,17 +782,53 @@
     document.getElementById('chat-form').addEventListener('submit', async function (e) {
       e.preventDefault();
       var text = chatInputEl.value.trim();
-      if (!text) return;
+      if (!text && !pendingFiles.length) return;
 
       emptyDiv && (emptyDiv.style.display = 'none');
       var now = new Date().toISOString();
-      chatMessages.push({ text: text, cls: 'user', sender: 'You', timestamp: now });
-      appendChatMsg(messagesDiv, text, 'user', 'You', now);
+
+      // Show user message with image previews
+      var displayText = text || (pendingFiles.length ? '[Image' + (pendingFiles.length > 1 ? 's' : '') + ']' : '');
+      chatMessages.push({ text: displayText, cls: 'user', sender: 'You', timestamp: now });
+      appendChatMsg(messagesDiv, displayText, 'user', 'You', now);
+
+      // Show inline previews for pending images
+      if (pendingFiles.length) {
+        var imgDiv = document.createElement('div');
+        imgDiv.className = 'msg user msg-images';
+        pendingFiles.forEach(function (f) {
+          var img = document.createElement('img');
+          img.src = URL.createObjectURL(f);
+          img.className = 'chat-image';
+          imgDiv.appendChild(img);
+        });
+        messagesDiv.appendChild(imgDiv);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
+
       chatInputEl.value = '';
       chatInputEl.style.height = 'auto';
 
       try {
-        await api('POST', '/api/message', { text: text, chat_jid: chatJid });
+        if (pendingFiles.length) {
+          // Upload images via multipart
+          var formData = new FormData();
+          pendingFiles.forEach(function (f) { formData.append('file', f); });
+          var uploadUrl = apiUrl('/api/upload?chat_jid=' + encodeURIComponent(chatJid) + (text ? '&text=' + encodeURIComponent(text) : ''));
+          var uploadRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: API_TOKEN ? { 'Authorization': 'Bearer ' + API_TOKEN } : {},
+            body: formData,
+          });
+          if (!uploadRes.ok) {
+            var err = await uploadRes.json().catch(function () { return {}; });
+            throw new Error(err.error || 'Upload failed');
+          }
+          pendingFiles = [];
+          updatePreview();
+        } else {
+          await api('POST', '/api/message', { text: text, chat_jid: chatJid });
+        }
       } catch (err) {
         chatMessages.push({ text: 'Error: ' + err.message, cls: 'bot' });
         appendChatMsg(messagesDiv, 'Error: ' + err.message, 'bot');
@@ -752,8 +846,16 @@
         (timestamp ? '<span class="msg-meta-time">' + relTime(timestamp) + '</span>' : '') +
       '</div>';
     }
+
+    // Detect image references and render inline
+    var imagePattern = /\[(Image|Photo)\]\s*\(([^)]+)\)/g;
+    var hasImages = imagePattern.test(text);
+    imagePattern.lastIndex = 0;
+
     if (cls === 'bot') {
-      div.innerHTML = meta + renderMarkdown(text);
+      div.innerHTML = meta + renderMarkdownWithImages(text);
+    } else if (hasImages) {
+      div.innerHTML = meta + renderMarkdownWithImages(text);
     } else {
       div.innerHTML = meta;
       var contentSpan = document.createElement('span');
@@ -762,6 +864,33 @@
     }
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
+  }
+
+  function renderMarkdownWithImages(text) {
+    // Extract image references and replace with img tags
+    var imagePattern = /\[(Image|Photo)\]\s*\(([^)]+)\)/g;
+    text = text.replace(imagePattern, function (match, type, filePath) {
+      // Convert container path to API URL
+      // /workspace/group/attachments/file.jpg -> /api/files/{folder}/attachments/file.jpg
+      // /workspace/group/generated/file.png -> /api/files/{folder}/generated/file.png
+      var parts = filePath.match(/\/workspace\/group\/((?:attachments|generated)\/.+)/);
+      if (parts) {
+        // Need the group folder - get from current chatJid
+        var folder = getGroupFolder(chatJid);
+        if (folder) {
+          var imgUrl = apiUrl('/api/files/' + encodeURIComponent(folder) + '/' + parts[1]);
+          return '<div class="msg-image-container"><img src="' + imgUrl + '" class="chat-image" loading="lazy" onclick="window.open(this.src)"></div>';
+        }
+      }
+      return match;
+    });
+    return renderMarkdown(text);
+  }
+
+  function getGroupFolder(jid) {
+    if (!statusData || !statusData.groups) return null;
+    var group = statusData.groups.find(function (g) { return g.jid === jid; });
+    return group ? group.folder : null;
   }
 
   // ================================================================
