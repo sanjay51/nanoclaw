@@ -3,16 +3,24 @@ import { randomUUID } from 'crypto';
 
 import { API_TOKEN, ASSISTANT_NAME, WEB_HOST } from '../config.js';
 import {
+  createTask,
+  deleteRegisteredGroup,
+  deleteSession,
   deleteTask,
-  getAllRegisteredGroups,
-  getAllTasks,
   getAllChats,
+  getAllRegisteredGroups,
+  getAllSessions,
+  getAllTasks,
+  getMessagesSince,
+  getRegisteredGroup,
   getTaskById,
+  getTaskRunLogs,
+  setRegisteredGroup,
   updateTask,
 } from '../db.js';
 import { readEnvFile } from '../env.js';
 import { logger } from '../logger.js';
-import { nudgeScheduler } from '../task-scheduler.js';
+import { computeNextRun, nudgeScheduler } from '../task-scheduler.js';
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
   Channel,
@@ -163,8 +171,14 @@ export class WebChannel implements Channel {
       return;
     }
 
-    // Match /api/tasks/:id
+    // Route matching
+    const taskLogMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/logs$/);
     const taskMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
+    const groupMsgMatch = url.pathname.match(
+      /^\/api\/groups\/([^/]+)\/messages$/,
+    );
+    const groupMatch = url.pathname.match(/^\/api\/groups\/([^/]+)$/);
+    const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
 
     if (url.pathname === '/' && req.method === 'GET') {
       this.serveUI(res);
@@ -174,12 +188,36 @@ export class WebChannel implements Channel {
       this.handleMessage(req, res);
     } else if (url.pathname === '/api/status' && req.method === 'GET') {
       this.handleStatus(res);
+    } else if (url.pathname === '/api/groups' && req.method === 'GET') {
+      this.handleGetGroups(res);
+    } else if (groupMsgMatch && req.method === 'GET') {
+      this.handleGetGroupMessages(
+        decodeURIComponent(groupMsgMatch[1]),
+        url,
+        res,
+      );
+    } else if (groupMatch && req.method === 'GET') {
+      this.handleGetGroup(decodeURIComponent(groupMatch[1]), res);
+    } else if (groupMatch && req.method === 'PATCH') {
+      this.handleUpdateGroup(decodeURIComponent(groupMatch[1]), req, res);
+    } else if (groupMatch && req.method === 'DELETE') {
+      this.handleDeleteGroup(decodeURIComponent(groupMatch[1]), res);
+    } else if (url.pathname === '/api/tasks' && req.method === 'POST') {
+      this.handleCreateTask(req, res);
+    } else if (taskLogMatch && req.method === 'GET') {
+      this.handleGetTaskLogs(taskLogMatch[1], url, res);
     } else if (taskMatch && req.method === 'GET') {
       this.handleGetTask(taskMatch[1], res);
     } else if (taskMatch && req.method === 'PATCH') {
       this.handleUpdateTask(taskMatch[1], req, res);
     } else if (taskMatch && req.method === 'DELETE') {
       this.handleDeleteTask(taskMatch[1], res);
+    } else if (url.pathname === '/api/sessions' && req.method === 'GET') {
+      this.handleGetSessions(res);
+    } else if (sessionMatch && req.method === 'DELETE') {
+      this.handleDeleteSession(decodeURIComponent(sessionMatch[1]), res);
+    } else if (url.pathname === '/api/chats' && req.method === 'GET') {
+      this.handleGetChats(res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -210,14 +248,18 @@ export class WebChannel implements Channel {
     req.on('data', (chunk) => (body += chunk));
     req.on('end', () => {
       try {
-        const { text } = JSON.parse(body);
+        const parsed = JSON.parse(body);
+        const text = parsed.text;
         if (!text || typeof text !== 'string') {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'Missing text field' }));
           return;
         }
 
-        const chatJid = DEFAULT_JID;
+        const chatJid =
+          typeof parsed.chat_jid === 'string' && parsed.chat_jid
+            ? parsed.chat_jid
+            : DEFAULT_JID;
         const timestamp = new Date().toISOString();
 
         this.opts.onChatMetadata(chatJid, timestamp, 'Web Chat', 'web', false);
@@ -319,6 +361,216 @@ export class WebChannel implements Channel {
     deleteTask(id);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
+  }
+
+  // ---- Group endpoints ----
+
+  private handleGetGroups(res: http.ServerResponse): void {
+    const groups = getAllRegisteredGroups();
+    const result = Object.entries(groups).map(([jid, g]) => ({
+      jid,
+      name: g.name,
+      folder: g.folder,
+      trigger: g.trigger,
+      isMain: g.isMain || false,
+      requiresTrigger: g.requiresTrigger !== false,
+      containerConfig: g.containerConfig || null,
+      added_at: g.added_at,
+    }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+  }
+
+  private handleGetGroup(jid: string, res: http.ServerResponse): void {
+    const group = getRegisteredGroup(jid);
+    if (!group) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Group not found' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        jid: group.jid,
+        name: group.name,
+        folder: group.folder,
+        trigger: group.trigger,
+        isMain: group.isMain || false,
+        requiresTrigger: group.requiresTrigger !== false,
+        containerConfig: group.containerConfig || null,
+        added_at: group.added_at,
+      }),
+    );
+  }
+
+  private handleUpdateGroup(
+    jid: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const group = getRegisteredGroup(jid);
+        if (!group) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Group not found' }));
+          return;
+        }
+
+        const data = JSON.parse(body);
+        const updated: typeof group = { ...group };
+        if (typeof data.name === 'string') updated.name = data.name;
+        if (typeof data.trigger === 'string') updated.trigger = data.trigger;
+        if (typeof data.requiresTrigger === 'boolean')
+          updated.requiresTrigger = data.requiresTrigger;
+        if (data.containerConfig !== undefined) {
+          const cfg = updated.containerConfig || {};
+          if (typeof data.containerConfig?.timeout === 'number')
+            cfg.timeout = data.containerConfig.timeout;
+          updated.containerConfig = cfg;
+        }
+
+        setRegisteredGroup(jid, updated);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleDeleteGroup(jid: string, res: http.ServerResponse): void {
+    const group = getRegisteredGroup(jid);
+    if (!group) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Group not found' }));
+      return;
+    }
+    if (group.isMain) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Cannot delete the main group' }));
+      return;
+    }
+    deleteRegisteredGroup(jid);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  }
+
+  private handleGetGroupMessages(
+    jid: string,
+    url: URL,
+    res: http.ServerResponse,
+  ): void {
+    const since = url.searchParams.get('since') || '';
+    const limit = Math.min(
+      parseInt(url.searchParams.get('limit') || '100', 10) || 100,
+      500,
+    );
+    const messages = getMessagesSince(jid, since, ASSISTANT_NAME, limit);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(messages));
+  }
+
+  // ---- Task create & logs ----
+
+  private handleCreateTask(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (!data.prompt || !data.schedule_type || !data.schedule_value) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: 'Required: prompt, schedule_type, schedule_value',
+            }),
+          );
+          return;
+        }
+        if (!data.group_folder || !data.chat_jid) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({ error: 'Required: group_folder, chat_jid' }),
+          );
+          return;
+        }
+
+        const task = {
+          id: randomUUID(),
+          group_folder: data.group_folder,
+          chat_jid: data.chat_jid,
+          prompt: data.prompt,
+          script: data.script || null,
+          schedule_type: data.schedule_type as 'cron' | 'interval' | 'once',
+          schedule_value: data.schedule_value,
+          context_mode: (data.context_mode as 'group' | 'isolated') || 'isolated',
+          next_run: null as string | null,
+          status: 'active' as const,
+          created_at: new Date().toISOString(),
+        };
+
+        // Compute initial next_run
+        task.next_run = computeNextRun(task as import('../types.js').ScheduledTask);
+
+        createTask(task);
+        nudgeScheduler();
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(task));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleGetTaskLogs(
+    id: string,
+    url: URL,
+    res: http.ServerResponse,
+  ): void {
+    const limit = Math.min(
+      parseInt(url.searchParams.get('limit') || '50', 10) || 50,
+      200,
+    );
+    const logs = getTaskRunLogs(id, limit);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(logs));
+  }
+
+  // ---- Session endpoints ----
+
+  private handleGetSessions(res: http.ServerResponse): void {
+    const sessions = getAllSessions();
+    const result = Object.entries(sessions).map(([folder, sessionId]) => ({
+      folder,
+      sessionId,
+    }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(result));
+  }
+
+  private handleDeleteSession(
+    folder: string,
+    res: http.ServerResponse,
+  ): void {
+    deleteSession(folder);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  }
+
+  // ---- Chats endpoint ----
+
+  private handleGetChats(res: http.ServerResponse): void {
+    const chats = getAllChats();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(chats));
   }
 
   private handleStatus(res: http.ServerResponse): void {

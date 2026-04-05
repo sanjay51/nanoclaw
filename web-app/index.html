@@ -34,77 +34,51 @@
 <!-- App (hidden until connected) -->
 <div id="app">
 
-  <!-- Sidebar -->
+  <!-- Sidebar Navigation -->
   <div id="sidebar">
     <div class="sidebar-header">
       <h1 id="assistant-title">NanoClaw</h1>
       <div class="spacer"></div>
-      <span class="version">NanoClaw</span>
-      <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark theme">&#9788;</button>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle theme">&#9788;</button>
       <button class="disconnect-btn" id="disconnect-btn" title="Disconnect">&#x2715;</button>
     </div>
 
-    <div class="section" id="sec-channels">
-      <div class="section-title">Channels</div>
-      <div id="channel-list"><div class="empty-hint">Loading...</div></div>
-    </div>
+    <nav id="nav">
+      <div class="nav-item active" data-view="dashboard">
+        <span class="nav-icon">&#9632;</span>
+        <span class="nav-label">Dashboard</span>
+      </div>
+      <div class="nav-item" data-view="groups">
+        <span class="nav-icon">&#9733;</span>
+        <span class="nav-label">Groups</span>
+        <span class="nav-badge" id="nav-groups-count"></span>
+      </div>
+      <div class="nav-item" data-view="tasks">
+        <span class="nav-icon">&#9200;</span>
+        <span class="nav-label">Tasks</span>
+        <span class="nav-badge" id="nav-tasks-count"></span>
+      </div>
+      <div class="nav-item" data-view="chat">
+        <span class="nav-icon">&#9993;</span>
+        <span class="nav-label">Chat</span>
+      </div>
+      <div class="nav-item" data-view="system">
+        <span class="nav-icon">&#9881;</span>
+        <span class="nav-label">System</span>
+      </div>
+    </nav>
 
-    <div class="divider"></div>
-
-    <div class="section" id="sec-groups">
-      <div class="section-title">Groups</div>
-      <div id="group-list"><div class="empty-hint">Loading...</div></div>
-    </div>
-
-    <div class="divider"></div>
-
-    <div class="section" id="sec-tasks">
-      <div class="section-title">Scheduled Tasks</div>
-      <div id="task-list"><div class="empty-hint">Loading...</div></div>
-    </div>
-
-    <div class="divider"></div>
-
-    <div class="section" id="sec-chats">
-      <div class="section-title">Recent Chats</div>
-      <div id="chat-list"><div class="empty-hint">Loading...</div></div>
+    <div id="sidebar-status">
+      <div class="status-row">
+        <div class="dot" id="sidebar-dot"></div>
+        <span id="sidebar-status-text">disconnected</span>
+      </div>
     </div>
   </div>
 
-  <!-- Main area -->
+  <!-- Main content area -->
   <div id="main">
-    <!-- Chat view (default) -->
-    <div id="chat-view">
-      <header>
-        <div class="dot" id="dot"></div>
-        <h2>Web Chat</h2>
-        <span class="status" id="status">disconnected</span>
-      </header>
-
-      <div id="messages">
-        <div class="empty-state" id="empty">Send a message to start chatting.</div>
-      </div>
-
-      <div class="typing" id="typing">
-        <span>.</span><span>.</span><span>.</span> thinking
-      </div>
-
-      <div id="input-area">
-        <form id="form">
-          <textarea id="input" rows="1" placeholder="Message..." autofocus></textarea>
-          <button type="submit">Send</button>
-        </form>
-      </div>
-    </div>
-
-    <!-- Detail panel (shown when clicking sidebar items) -->
-    <div id="detail-panel">
-      <div class="detail-header">
-        <button class="back-btn" id="detail-back">&larr; Back</button>
-        <h2 id="detail-title"></h2>
-      </div>
-      <div class="detail-body" id="detail-body"></div>
-    </div>
+    <div id="main-content"></div>
   </div>
 
 </div>

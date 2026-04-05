@@ -543,6 +543,17 @@ export function updateTaskAfterRun(
   ).run(nextRun, now, lastResult, nextRun, id);
 }
 
+export function getTaskRunLogs(
+  taskId: string,
+  limit: number = 50,
+): Array<TaskRunLog & { id: number }> {
+  return db
+    .prepare(
+      'SELECT * FROM task_run_logs WHERE task_id = ? ORDER BY run_at DESC LIMIT ?',
+    )
+    .all(taskId, limit) as Array<TaskRunLog & { id: number }>;
+}
+
 export function logTaskRun(log: TaskRunLog): void {
   db.prepare(
     `
@@ -663,6 +674,14 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
     group.requiresTrigger === undefined ? 1 : group.requiresTrigger ? 1 : 0,
     group.isMain ? 1 : 0,
   );
+}
+
+export function deleteRegisteredGroup(jid: string): void {
+  const group = getRegisteredGroup(jid);
+  db.prepare('DELETE FROM registered_groups WHERE jid = ?').run(jid);
+  if (group) {
+    deleteSession(group.folder);
+  }
 }
 
 export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
