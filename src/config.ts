@@ -8,15 +8,21 @@ import { isValidTimezone } from './timezone.js';
 const envConfig = readEnvFile([
   'ASSISTANT_NAME',
   'ASSISTANT_HAS_OWN_NUMBER',
+  'API_TOKEN',
   'ONECLI_URL',
   'TZ',
+  'WEB_HOST',
 ]);
 
+export const API_TOKEN =
+  process.env.API_TOKEN || envConfig.API_TOKEN || '';
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER ||
     envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
+export const WEB_HOST =
+  process.env.WEB_HOST || envConfig.WEB_HOST || '127.0.0.1';
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 

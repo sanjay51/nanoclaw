@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NanoClaw</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Connection Screen -->
+<div id="connect-screen">
+  <div class="connect-card">
+    <h1>NanoClaw</h1>
+    <div class="subtitle">Connect to your NanoClaw instance</div>
+    <form id="connect-form">
+      <div class="connect-field">
+        <label for="connect-endpoint">Endpoint URL</label>
+        <input id="connect-endpoint" type="text" placeholder="http://192.168.1.100:3456" autocomplete="url" spellcheck="false">
+      </div>
+      <div class="connect-field">
+        <label for="connect-token">API Token</label>
+        <input id="connect-token" type="password" placeholder="Your API token" autocomplete="current-password">
+      </div>
+      <button type="submit" class="connect-btn" id="connect-btn">Connect</button>
+      <label class="connect-remember">
+        <input type="checkbox" id="connect-remember"> Remember connection
+      </label>
+      <div class="connect-error" id="connect-error"></div>
+    </form>
+  </div>
+</div>
+
+<!-- App (hidden until connected) -->
+<div id="app">
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <h1 id="assistant-title">NanoClaw</h1>
+      <div class="spacer"></div>
+      <span class="version">NanoClaw</span>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark theme">&#9788;</button>
+      <button class="disconnect-btn" id="disconnect-btn" title="Disconnect">&#x2715;</button>
+    </div>
+
+    <div class="section" id="sec-channels">
+      <div class="section-title">Channels</div>
+      <div id="channel-list"><div class="empty-hint">Loading...</div></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section" id="sec-groups">
+      <div class="section-title">Groups</div>
+      <div id="group-list"><div class="empty-hint">Loading...</div></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section" id="sec-tasks">
+      <div class="section-title">Scheduled Tasks</div>
+      <div id="task-list"><div class="empty-hint">Loading...</div></div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section" id="sec-chats">
+      <div class="section-title">Recent Chats</div>
+      <div id="chat-list"><div class="empty-hint">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Main area -->
+  <div id="main">
+    <!-- Chat view (default) -->
+    <div id="chat-view">
+      <header>
+        <div class="dot" id="dot"></div>
+        <h2>Web Chat</h2>
+        <span class="status" id="status">disconnected</span>
+      </header>
+
+      <div id="messages">
+        <div class="empty-state" id="empty">Send a message to start chatting.</div>
+      </div>
+
+      <div class="typing" id="typing">
+        <span>.</span><span>.</span><span>.</span> thinking
+      </div>
+
+      <div id="input-area">
+        <form id="form">
+          <textarea id="input" rows="1" placeholder="Message..." autofocus></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Detail panel (shown when clicking sidebar items) -->
+    <div id="detail-panel">
+      <div class="detail-header">
+        <button class="back-btn" id="detail-back">&larr; Back</button>
+        <h2 id="detail-title"></h2>
+      </div>
+      <div class="detail-body" id="detail-body"></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

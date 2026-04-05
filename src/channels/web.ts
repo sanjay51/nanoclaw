@@ -1,7 +1,7 @@
 import http from 'http';
 import { randomUUID } from 'crypto';
 
-import { ASSISTANT_NAME } from '../config.js';
+import { API_TOKEN, ASSISTANT_NAME, WEB_HOST } from '../config.js';
 import {
   deleteTask,
   getAllRegisteredGroups,
@@ -59,9 +59,14 @@ export class WebChannel implements Channel {
     this.server = http.createServer((req, res) => this.handleRequest(req, res));
 
     return new Promise<void>((resolve, reject) => {
-      this.server!.listen(this.port, '127.0.0.1', () => {
-        logger.info({ port: this.port }, 'Web channel listening');
-        console.log(`\n  Web UI: http://localhost:${this.port}\n`);
+      this.server!.listen(this.port, WEB_HOST, () => {
+        logger.info({ port: this.port, host: WEB_HOST }, 'Web channel listening');
+        if (WEB_HOST !== '127.0.0.1' && !API_TOKEN) {
+          logger.warn(
+            'Web channel is listening on a non-loopback address without API_TOKEN set. Set API_TOKEN in .env for security.',
+          );
+        }
+        console.log(`\n  Web UI: http://${WEB_HOST === '0.0.0.0' ? 'localhost' : WEB_HOST}:${this.port}\n`);
         resolve();
       });
       this.server!.on('error', reject);
@@ -110,6 +115,21 @@ export class WebChannel implements Channel {
     }
   }
 
+  private checkAuth(req: http.IncomingMessage, url: URL): boolean {
+    if (!API_TOKEN) return true;
+
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const [scheme, token] = authHeader.split(' ');
+      if (scheme === 'Bearer' && token === API_TOKEN) return true;
+    }
+
+    const queryToken = url.searchParams.get('token');
+    if (queryToken === API_TOKEN) return true;
+
+    return false;
+  }
+
   private handleRequest(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -121,11 +141,17 @@ export class WebChannel implements Channel {
       'Access-Control-Allow-Methods',
       'GET, POST, PATCH, DELETE, OPTIONS',
     );
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    if (url.pathname.startsWith('/api/') && !this.checkAuth(req, url)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized' }));
       return;
     }
 
@@ -361,6 +387,7 @@ export class WebChannel implements Channel {
 }
 
 // ---------- Inline HTML ----------
+// NOTE: Standalone version lives in web-app/. For significant UI changes, update web-app/ first.
 
 function buildHTML(): string {
   return /* html */ `<!DOCTYPE html>
