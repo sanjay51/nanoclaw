@@ -7,7 +7,7 @@ import { AuthService } from '../../services/auth.service';
 import { SseService } from '../../services/sse.service';
 import { StatusService } from '../../services/status.service';
 import { ToastService } from '../../services/toast.service';
-import { GroupDetail, MessageItem } from '../../shared/types';
+import { GroupDetail, MessageItem, Personality } from '../../shared/types';
 import { relTime, renderMarkdown } from '../../shared/utils';
 
 interface ChatMsg {
@@ -37,6 +37,8 @@ export class ChatComponent implements OnInit, OnDestroy {
   @ViewChild('textInput') textInputEl!: ElementRef<HTMLTextAreaElement>;
 
   groups = signal<GroupDetail[]>([]);
+  personalities = signal<Personality[]>([]);
+  selectedPersonalityId = signal('');
   chatJid = signal('');
   messages = signal<ChatMsg[]>([]);
   inputText = '';
@@ -49,12 +51,17 @@ export class ChatComponent implements OnInit, OnDestroy {
   private sub!: Subscription;
 
   async ngOnInit(): Promise<void> {
-    const groupList = await this.api.getGroups().catch(() => []);
+    const [groupList, personalityList] = await Promise.all([
+      this.api.getGroups().catch(() => [] as GroupDetail[]),
+      this.api.getPersonalities().catch(() => [] as Personality[]),
+    ]);
     this.groups.set(groupList);
+    this.personalities.set(personalityList);
 
     // Default to web group
     const webGroup = groupList.find(g => g.jid.startsWith('web:'));
     this.chatJid.set(webGroup?.jid || groupList[0]?.jid || '');
+    this.syncPersonalityFromGroup();
 
     this.sub = this.sse.messages.subscribe(ev => {
       if (ev.type === 'message' && ev.text) {
@@ -77,7 +84,30 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   async onGroupChange(): Promise<void> {
     this.messages.set([]);
+    this.syncPersonalityFromGroup();
     if (this.chatJid()) await this.loadHistory();
+  }
+
+  async onPersonalityChange(): Promise<void> {
+    const jid = this.chatJid();
+    if (!jid) return;
+    try {
+      await this.api.updateGroup(jid, {
+        personalityId: this.selectedPersonalityId() || null,
+      });
+      // Update local group list
+      const groups = this.groups();
+      const idx = groups.findIndex(g => g.jid === jid);
+      if (idx >= 0) {
+        const updated = { ...groups[idx], personalityId: this.selectedPersonalityId() || null };
+        this.groups.set([...groups.slice(0, idx), updated, ...groups.slice(idx + 1)]);
+      }
+    } catch { /* silent */ }
+  }
+
+  private syncPersonalityFromGroup(): void {
+    const group = this.groups().find(g => g.jid === this.chatJid());
+    this.selectedPersonalityId.set(group?.personalityId || '');
   }
 
   async loadHistory(): Promise<void> {

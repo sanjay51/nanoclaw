@@ -7,6 +7,14 @@
         <option [value]="g.jid">{{ g.name }} ({{ g.jid }})</option>
       }
     </select>
+    @if (personalities().length) {
+      <select [ngModel]="selectedPersonalityId()" (ngModelChange)="selectedPersonalityId.set($event); onPersonalityChange()" class="px-2.5 py-1.5 rounded border border-border bg-zinc-950 text-sm text-zinc-200 outline-none max-w-56">
+        <option value="">No personality</option>
+        @for (p of personalities(); track p.id) {
+          <option [value]="p.id">{{ p.name }}</option>
+        }
+      </select>
+    }
   </div>
 
   <!-- Messages -->

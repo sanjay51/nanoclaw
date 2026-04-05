@@ -3,6 +3,7 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from './services/auth.service';
 import { SseService } from './services/sse.service';
 import { StatusService } from './services/status.service';
+import { ThemeService } from './services/theme.service';
 import { ToastService } from './services/toast.service';
 import { ConnectComponent } from './components/connect/connect.component';
 import { ToastComponent } from './components/toast/toast.component';
@@ -18,6 +19,7 @@ export class AppComponent implements OnInit {
   auth = inject(AuthService);
   sse = inject(SseService);
   status = inject(StatusService);
+  theme = inject(ThemeService);
   toast = inject(ToastService);
 
   navItems = [
@@ -25,6 +27,7 @@ export class AppComponent implements OnInit {
     { path: '/dashboard', label: 'Dashboard', icon: '\u25A0' },
     { path: '/groups', label: 'Groups', icon: '\u2605' },
     { path: '/tasks', label: 'Tasks', icon: '\u23F0' },
+    { path: '/personalities', label: 'Personalities', icon: '\u2728' },
     { path: '/system', label: 'System', icon: '\u2699' },
   ];
 

@@ -10,5 +10,6 @@ export const routes: Routes = [
   { path: 'tasks', loadComponent: () => import('./components/tasks/tasks.component').then(m => m.TasksComponent) },
   { path: 'tasks/new', loadComponent: () => import('./components/task-create/task-create.component').then(m => m.TaskCreateComponent) },
   { path: 'tasks/:id', loadComponent: () => import('./components/task-detail/task-detail.component').then(m => m.TaskDetailComponent) },
+  { path: 'personalities', loadComponent: () => import('./components/personalities/personalities.component').then(m => m.PersonalitiesComponent) },
   { path: 'system', loadComponent: () => import('./components/system/system.component').then(m => m.SystemComponent) },
 ];

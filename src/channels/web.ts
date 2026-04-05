@@ -5,19 +5,25 @@ import { randomUUID } from 'crypto';
 
 import { API_TOKEN, ASSISTANT_NAME, WEB_HOST } from '../config.js';
 import {
+  createPersonality,
   createTask,
+  deletePersonality,
   deleteRegisteredGroup,
   deleteSession,
   deleteTask,
   getAllChats,
+  getAllPersonalities,
   getAllRegisteredGroups,
   getAllSessions,
   getAllTasks,
+  getGroupFoldersByPersonality,
   getMessageHistory,
+  getPersonalityById,
   getRegisteredGroup,
   getTaskById,
   getTaskRunLogs,
   setRegisteredGroup,
+  updatePersonality,
   updateTask,
 } from '../db.js';
 import { readEnvFile } from '../env.js';
@@ -197,6 +203,9 @@ export class WebChannel implements Channel {
     );
     const groupMatch = url.pathname.match(/^\/api\/groups\/([^/]+)$/);
     const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+    const personalityMatch = url.pathname.match(
+      /^\/api\/personalities\/([^/]+)$/,
+    );
 
     if (url.pathname === '/' && req.method === 'GET') {
       this.serveUI(res);
@@ -244,6 +253,20 @@ export class WebChannel implements Channel {
       this.handleServeFile(url, res);
     } else if (url.pathname === '/api/logs' && req.method === 'GET') {
       this.handleGetLogs(url, res);
+    } else if (
+      url.pathname === '/api/personalities' &&
+      req.method === 'GET'
+    ) {
+      this.handleGetPersonalities(res);
+    } else if (
+      url.pathname === '/api/personalities' &&
+      req.method === 'POST'
+    ) {
+      this.handleCreatePersonality(req, res);
+    } else if (personalityMatch && req.method === 'PATCH') {
+      this.handleUpdatePersonality(personalityMatch[1], req, res);
+    } else if (personalityMatch && req.method === 'DELETE') {
+      this.handleDeletePersonality(personalityMatch[1], res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -411,6 +434,7 @@ export class WebChannel implements Channel {
       requiresTrigger: g.requiresTrigger !== false,
       containerConfig: g.containerConfig || null,
       added_at: g.added_at,
+      personalityId: g.personalityId || null,
     }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));
@@ -434,6 +458,7 @@ export class WebChannel implements Channel {
         requiresTrigger: group.requiresTrigger !== false,
         containerConfig: group.containerConfig || null,
         added_at: group.added_at,
+        personalityId: group.personalityId || null,
       }),
     );
   }
@@ -465,6 +490,15 @@ export class WebChannel implements Channel {
           if (typeof data.containerConfig?.timeout === 'number')
             cfg.timeout = data.containerConfig.timeout;
           updated.containerConfig = cfg;
+        }
+        if (data.personalityId !== undefined) {
+          const oldPid = group.personalityId;
+          updated.personalityId =
+            data.personalityId === null ? undefined : data.personalityId;
+          // Clear session when personality changes so agent starts fresh
+          if (updated.personalityId !== oldPid) {
+            deleteSession(updated.folder);
+          }
         }
 
         setRegisteredGroup(jid, updated);
@@ -839,6 +873,111 @@ export class WebChannel implements Channel {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Failed to read logs' }));
     }
+  }
+
+  // ---- Personality endpoints ----
+
+  private handleGetPersonalities(res: http.ServerResponse): void {
+    const personalities = getAllPersonalities();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(personalities));
+  }
+
+  private handleCreatePersonality(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (!data.name || typeof data.name !== 'string') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Required: name' }));
+          return;
+        }
+        const now = new Date().toISOString();
+        const personality = {
+          id: randomUUID(),
+          name: data.name,
+          instructions: data.instructions || '',
+          created_at: now,
+          updated_at: now,
+        };
+        createPersonality(personality);
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(personality));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleUpdatePersonality(
+    id: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const existing = getPersonalityById(id);
+        if (!existing) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Personality not found' }));
+          return;
+        }
+        const data = JSON.parse(body);
+        const updates: Record<string, string> = {};
+        if (typeof data.name === 'string') updates.name = data.name;
+        if (typeof data.instructions === 'string')
+          updates.instructions = data.instructions;
+        if (Object.keys(updates).length === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No valid fields to update' }));
+          return;
+        }
+        // If instructions changed, clear sessions for all groups using this personality
+        // so the agent starts fresh with the new context
+        const instructionsChanged =
+          typeof data.instructions === 'string' &&
+          data.instructions !== existing.instructions;
+
+        updatePersonality(id, updates);
+
+        if (instructionsChanged) {
+          const folders = getGroupFoldersByPersonality(id);
+          for (const folder of folders) {
+            deleteSession(folder);
+          }
+        }
+
+        const updated = getPersonalityById(id);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(updated));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleDeletePersonality(
+    id: string,
+    res: http.ServerResponse,
+  ): void {
+    const existing = getPersonalityById(id);
+    if (!existing) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Personality not found' }));
+      return;
+    }
+    deletePersonality(id);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
   }
 
   private handleStatus(res: http.ServerResponse): void {

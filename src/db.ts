@@ -7,6 +7,7 @@ import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import {
   NewMessage,
+  Personality,
   RegisteredGroup,
   ScheduledTask,
   TaskRunLog,
@@ -82,6 +83,13 @@ function createSchema(database: Database.Database): void {
       container_config TEXT,
       requires_trigger INTEGER DEFAULT 1
     );
+    CREATE TABLE IF NOT EXISTS personalities (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      instructions TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   // Add context_mode column if it doesn't exist (migration for existing DBs)
@@ -156,6 +164,15 @@ function createSchema(database: Database.Database): void {
     database.exec(`ALTER TABLE messages ADD COLUMN reply_to_sender_name TEXT`);
   } catch {
     /* columns already exist */
+  }
+
+  // Add personality_id column to registered_groups if it doesn't exist
+  try {
+    database.exec(
+      `ALTER TABLE registered_groups ADD COLUMN personality_id TEXT`,
+    );
+  } catch {
+    /* column already exists */
   }
 }
 
@@ -656,6 +673,7 @@ export function getRegisteredGroup(
         container_config: string | null;
         requires_trigger: number | null;
         is_main: number | null;
+        personality_id: string | null;
       }
     | undefined;
   if (!row) return undefined;
@@ -678,6 +696,7 @@ export function getRegisteredGroup(
     requiresTrigger:
       row.requires_trigger === null ? undefined : row.requires_trigger === 1,
     isMain: row.is_main === 1 ? true : undefined,
+    personalityId: row.personality_id ?? undefined,
   };
 }
 
@@ -686,8 +705,8 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
     throw new Error(`Invalid group folder "${group.folder}" for JID ${jid}`);
   }
   db.prepare(
-    `INSERT OR REPLACE INTO registered_groups (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger, is_main)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO registered_groups (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger, is_main, personality_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     jid,
     group.name,
@@ -697,6 +716,7 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
     group.containerConfig ? JSON.stringify(group.containerConfig) : null,
     group.requiresTrigger === undefined ? 1 : group.requiresTrigger ? 1 : 0,
     group.isMain ? 1 : 0,
+    group.personalityId ?? null,
   );
 }
 
@@ -718,6 +738,7 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
     container_config: string | null;
     requires_trigger: number | null;
     is_main: number | null;
+    personality_id: string | null;
   }>;
   const result: Record<string, RegisteredGroup> = {};
   for (const row of rows) {
@@ -739,9 +760,73 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
       requiresTrigger:
         row.requires_trigger === null ? undefined : row.requires_trigger === 1,
       isMain: row.is_main === 1 ? true : undefined,
+      personalityId: row.personality_id ?? undefined,
     };
   }
   return result;
+}
+
+// --- Personality accessors ---
+
+export function createPersonality(p: Personality): void {
+  db.prepare(
+    `INSERT INTO personalities (id, name, instructions, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+  ).run(p.id, p.name, p.instructions, p.created_at, p.updated_at);
+}
+
+export function getPersonalityById(id: string): Personality | undefined {
+  return db
+    .prepare('SELECT * FROM personalities WHERE id = ?')
+    .get(id) as Personality | undefined;
+}
+
+export function getAllPersonalities(): Personality[] {
+  return db
+    .prepare('SELECT * FROM personalities ORDER BY name')
+    .all() as Personality[];
+}
+
+export function updatePersonality(
+  id: string,
+  updates: Partial<Pick<Personality, 'name' | 'instructions'>>,
+): void {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.name !== undefined) {
+    fields.push('name = ?');
+    values.push(updates.name);
+  }
+  if (updates.instructions !== undefined) {
+    fields.push('instructions = ?');
+    values.push(updates.instructions);
+  }
+
+  if (fields.length === 0) return;
+
+  fields.push('updated_at = ?');
+  values.push(new Date().toISOString());
+  values.push(id);
+  db.prepare(
+    `UPDATE personalities SET ${fields.join(', ')} WHERE id = ?`,
+  ).run(...values);
+}
+
+export function getGroupFoldersByPersonality(personalityId: string): string[] {
+  const rows = db
+    .prepare(
+      'SELECT folder FROM registered_groups WHERE personality_id = ?',
+    )
+    .all(personalityId) as Array<{ folder: string }>;
+  return rows.map((r) => r.folder);
+}
+
+export function deletePersonality(id: string): void {
+  // Clear personality_id from any groups using this personality
+  db.prepare(
+    `UPDATE registered_groups SET personality_id = NULL WHERE personality_id = ?`,
+  ).run(id);
+  db.prepare('DELETE FROM personalities WHERE id = ?').run(id);
 }
 
 // --- JSON migration ---

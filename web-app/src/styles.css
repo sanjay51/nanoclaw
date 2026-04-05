@@ -17,6 +17,46 @@ body {
   @apply bg-zinc-950 text-zinc-200 h-screen m-0;
 }
 
+/* Light theme overrides */
+[data-theme="light"] {
+  --color-surface: #ffffff;
+  --color-surface2: #f5f5f5;
+  --color-border: #e0e0e0;
+  --color-text-dim: #666;
+  --color-text-muted: #999;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-user-bg: #dbeafe;
+  --color-bot-bg: #ffffff;
+}
+
+[data-theme="light"] body {
+  @apply bg-gray-100 text-zinc-900;
+}
+
+/* Remap zinc-* utilities in light mode */
+[data-theme="light"] .bg-zinc-950 { background-color: #f5f5f5; }
+[data-theme="light"] .bg-zinc-800 { background-color: #e5e5e5; }
+[data-theme="light"] .bg-zinc-800\/50 { background-color: rgba(229,229,229,0.5); }
+[data-theme="light"] .text-zinc-200 { color: #1a1a1a; }
+[data-theme="light"] .text-zinc-300 { color: #333; }
+[data-theme="light"] .text-zinc-400 { color: #555; }
+[data-theme="light"] .text-zinc-500 { color: #666; }
+[data-theme="light"] .text-zinc-600 { color: #888; }
+[data-theme="light"] .border-zinc-800 { border-color: #e0e0e0; }
+[data-theme="light"] .hover\:bg-zinc-800:hover { background-color: #e5e5e5; }
+[data-theme="light"] .hover\:text-white:hover { color: #111; }
+[data-theme="light"] .font-medium.text-white { color: #111; }
+[data-theme="light"] .bg-surface { background-color: #ffffff; }
+[data-theme="light"] .bg-surface2 { background-color: #f5f5f5; }
+[data-theme="light"] .border-border { border-color: #e0e0e0; }
+[data-theme="light"] code { background-color: #f0f0f0; color: #333; }
+[data-theme="light"] pre { background-color: #f5f5f5; }
+[data-theme="light"] .bg-user-bg { background-color: #dbeafe; color: #1e3a5f; }
+[data-theme="light"] .bg-bot-bg { background-color: #ffffff; }
+
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: #ccc; }
+
 /* Routed components must fill their parent flex container */
 router-outlet + * {
   flex: 1;

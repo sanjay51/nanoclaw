@@ -42,6 +42,8 @@ import {
   getLastBotMessageTimestamp,
   getMessagesSince,
   getNewMessages,
+  getPersonalityById,
+  getRegisteredGroup,
   getRouterState,
   initDatabase,
   setRegisteredGroup,
@@ -254,7 +256,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
     if (!hasTrigger) return true;
   }
 
-  const prompt = formatMessages(missedMessages, TIMEZONE);
+  let prompt = formatMessages(missedMessages, TIMEZONE);
+
+  // Prepend personality instructions if the group has one assigned.
+  // Read fresh from DB since personalityId can be changed via the web API
+  // without updating the in-memory registeredGroups map.
+  const freshGroup = getRegisteredGroup(chatJid);
+  const personalityId = freshGroup?.personalityId || group.personalityId;
+  if (personalityId) {
+    const personality = getPersonalityById(personalityId);
+    if (personality && personality.instructions.trim()) {
+      prompt = `<personality>\n${personality.instructions.trim()}\n</personality>\n\n${prompt}`;
+    }
+  }
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
   // these messages. Save the old cursor so we can roll back on error.

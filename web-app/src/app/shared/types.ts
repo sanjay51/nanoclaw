@@ -19,11 +19,20 @@ export interface GroupSummary {
   isMain: boolean;
   trigger: string;
   requiresTrigger: boolean;
+  personalityId: string | null;
 }
 
 export interface GroupDetail extends GroupSummary {
   containerConfig: { timeout?: number; additionalMounts?: unknown[] } | null;
   added_at: string;
+}
+
+export interface Personality {
+  id: string;
+  name: string;
+  instructions: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TaskSummary {

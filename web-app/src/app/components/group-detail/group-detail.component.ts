@@ -3,7 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { ToastService } from '../../services/toast.service';
-import { GroupDetail, SessionInfo, MessageItem } from '../../shared/types';
+import { GroupDetail, SessionInfo, MessageItem, Personality } from '../../shared/types';
 import { relTime, fmtDate } from '../../shared/utils';
 
 @Component({
@@ -27,6 +27,13 @@ import { relTime, fmtDate } from '../../shared/utils';
             <div><label class="block text-xs text-zinc-500 mb-1">Requires Trigger</label>
               <select [(ngModel)]="requiresTrigger" class="px-3 py-2 rounded border border-border bg-zinc-950 text-sm outline-none"><option [ngValue]="true">Yes</option><option [ngValue]="false">No</option></select></div>
             <div><label class="block text-xs text-zinc-500 mb-1">Container Timeout (ms)</label><input [(ngModel)]="timeout" type="number" placeholder="300000" class="w-full px-3 py-2 rounded border border-border bg-zinc-950 text-sm outline-none focus:border-accent"></div>
+            <div><label class="block text-xs text-zinc-500 mb-1">Personality</label>
+              <select [(ngModel)]="personalityId" class="w-full px-3 py-2 rounded border border-border bg-zinc-950 text-sm outline-none">
+                <option [ngValue]="''">None</option>
+                @for (p of personalities(); track p.id) {
+                  <option [ngValue]="p.id">{{ p.name }}</option>
+                }
+              </select></div>
           </div>
           <div class="flex gap-2 mt-4">
             <button (click)="save()" class="px-4 py-1.5 rounded bg-accent text-white text-sm font-medium hover:bg-accent-hover">Save Changes</button>
@@ -77,22 +84,28 @@ export class GroupDetailComponent implements OnInit {
   group = signal<GroupDetail | null>(null);
   session = signal<SessionInfo | null>(null);
   msgs = signal<MessageItem[]>([]);
+  personalities = signal<Personality[]>([]);
   name = ''; trigger = ''; requiresTrigger = true; timeout: number | null = null;
+  personalityId = '';
   rel = relTime; fmt = fmtDate;
 
   async ngOnInit(): Promise<void> {
     const jid = this.route.snapshot.paramMap.get('jid')!;
-    const [g, sessions] = await Promise.all([this.api.getGroup(jid), this.api.getSessions()]);
+    const [g, sessions, personalities] = await Promise.all([
+      this.api.getGroup(jid), this.api.getSessions(), this.api.getPersonalities(),
+    ]);
     this.group.set(g);
     this.session.set(sessions.find(s => s.folder === g.folder) || null);
+    this.personalities.set(personalities);
     this.name = g.name; this.trigger = g.trigger; this.requiresTrigger = g.requiresTrigger;
     this.timeout = g.containerConfig?.timeout || null;
+    this.personalityId = g.personalityId || '';
   }
 
   async save(): Promise<void> {
     const g = this.group()!;
     try {
-      const updates: any = { name: this.name, trigger: this.trigger, requiresTrigger: this.requiresTrigger };
+      const updates: any = { name: this.name, trigger: this.trigger, requiresTrigger: this.requiresTrigger, personalityId: this.personalityId || null };
       if (this.timeout && this.timeout > 0) updates.containerConfig = { timeout: this.timeout };
       await this.api.updateGroup(g.jid, updates);
       this.toast.show('Group updated');
