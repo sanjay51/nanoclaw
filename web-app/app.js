@@ -566,8 +566,8 @@
         }
         msgs.forEach(function (m) {
           var cls = (m.is_bot_message || m.is_from_me) ? 'bot' : 'user';
-          chatMessages.push({ text: m.content, cls: cls });
-          appendChatMsg(messagesDiv, m.content, cls);
+          chatMessages.push({ text: m.content, cls: cls, sender: m.sender_name, timestamp: m.timestamp });
+          appendChatMsg(messagesDiv, m.content, cls, m.sender_name, m.timestamp);
         });
       } catch (e) {
         messagesDiv.innerHTML = '<div class="empty-state">Failed to load history</div>';
@@ -602,8 +602,9 @@
       if (!text) return;
 
       emptyDiv && (emptyDiv.style.display = 'none');
-      chatMessages.push({ text: text, cls: 'user' });
-      appendChatMsg(messagesDiv, text, 'user');
+      var now = new Date().toISOString();
+      chatMessages.push({ text: text, cls: 'user', sender: 'You', timestamp: now });
+      appendChatMsg(messagesDiv, text, 'user', 'You', now);
       chatInputEl.value = '';
       chatInputEl.style.height = 'auto';
 
@@ -616,13 +617,23 @@
     });
   }
 
-  function appendChatMsg(container, text, cls) {
+  function appendChatMsg(container, text, cls, sender, timestamp) {
     var div = document.createElement('div');
     div.className = 'msg ' + cls;
+    var meta = '';
+    if (sender || timestamp) {
+      meta = '<div class="msg-meta">' +
+        (sender ? '<span class="msg-meta-sender">' + esc(sender) + '</span>' : '') +
+        (timestamp ? '<span class="msg-meta-time">' + relTime(timestamp) + '</span>' : '') +
+      '</div>';
+    }
     if (cls === 'bot') {
-      div.innerHTML = renderMarkdown(text);
+      div.innerHTML = meta + renderMarkdown(text);
     } else {
-      div.textContent = text;
+      div.innerHTML = meta;
+      var contentSpan = document.createElement('span');
+      contentSpan.textContent = text;
+      div.appendChild(contentSpan);
     }
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
@@ -746,9 +757,11 @@
           var msgJid = data.chatJid || '';
           var isForCurrentChat = !chatJid || !msgJid || msgJid === chatJid;
 
+          var ts = data.timestamp || new Date().toISOString();
+
           // Always store if for current chat (even if not on chat view)
           if (isForCurrentChat) {
-            chatMessages.push({ text: data.text, cls: 'bot' });
+            chatMessages.push({ text: data.text, cls: 'bot', sender: assistantName, timestamp: ts });
           }
 
           // Append to DOM if on chat view
@@ -758,7 +771,7 @@
             var emptyDiv = document.getElementById('chat-empty');
             if (emptyDiv) emptyDiv.style.display = 'none';
             if (typingDiv) typingDiv.classList.remove('visible');
-            appendChatMsg(messagesDiv, data.text, 'bot');
+            appendChatMsg(messagesDiv, data.text, 'bot', assistantName, ts);
           }
         } else if (data.type === 'typing') {
           var typingDiv2 = document.getElementById('chat-typing');
@@ -821,7 +834,15 @@
     app.style.display = 'flex';
 
     connectSSE();
-    navigate('dashboard');
+
+    // Default to chat view with web group selected if available
+    var webGroup = (statusData.groups || []).find(function (g) { return g.jid && g.jid.startsWith('web:'); });
+    if (webGroup) {
+      chatJid = webGroup.jid;
+      navigate('chat');
+    } else {
+      navigate('dashboard');
+    }
     sidebarInterval = setInterval(refreshStatus, 10000);
   }
 
