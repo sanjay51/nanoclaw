@@ -253,15 +253,9 @@ export class WebChannel implements Channel {
       this.handleServeFile(url, res);
     } else if (url.pathname === '/api/logs' && req.method === 'GET') {
       this.handleGetLogs(url, res);
-    } else if (
-      url.pathname === '/api/personalities' &&
-      req.method === 'GET'
-    ) {
+    } else if (url.pathname === '/api/personalities' && req.method === 'GET') {
       this.handleGetPersonalities(res);
-    } else if (
-      url.pathname === '/api/personalities' &&
-      req.method === 'POST'
-    ) {
+    } else if (url.pathname === '/api/personalities' && req.method === 'POST') {
       this.handleCreatePersonality(req, res);
     } else if (personalityMatch && req.method === 'PATCH') {
       this.handleUpdatePersonality(personalityMatch[1], req, res);
@@ -965,10 +959,7 @@ export class WebChannel implements Channel {
     });
   }
 
-  private handleDeletePersonality(
-    id: string,
-    res: http.ServerResponse,
-  ): void {
+  private handleDeletePersonality(id: string, res: http.ServerResponse): void {
     const existing = getPersonalityById(id);
     if (!existing) {
       res.writeHead(404, { 'Content-Type': 'application/json' });

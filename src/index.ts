@@ -37,6 +37,7 @@ import {
   getAllChats,
   getAllRegisteredGroups,
   getAllSessions,
+  getSession,
   deleteSession,
   getAllTasks,
   getLastBotMessageTimestamp,
@@ -382,7 +383,9 @@ async function runAgent(
   onOutput?: (output: ContainerOutput) => Promise<void>,
 ): Promise<'success' | 'error'> {
   const isMain = group.isMain === true;
-  const sessionId = sessions[group.folder];
+  // Read session from DB (not in-memory cache) so that external deletions
+  // (e.g. web API clearing session after personality update) take effect.
+  const sessionId = getSession(group.folder);
 
   // Update tasks snapshot for container to read (filtered by group)
   const tasks = getAllTasks();

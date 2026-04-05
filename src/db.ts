@@ -775,9 +775,9 @@ export function createPersonality(p: Personality): void {
 }
 
 export function getPersonalityById(id: string): Personality | undefined {
-  return db
-    .prepare('SELECT * FROM personalities WHERE id = ?')
-    .get(id) as Personality | undefined;
+  return db.prepare('SELECT * FROM personalities WHERE id = ?').get(id) as
+    | Personality
+    | undefined;
 }
 
 export function getAllPersonalities(): Personality[] {
@@ -807,16 +807,14 @@ export function updatePersonality(
   fields.push('updated_at = ?');
   values.push(new Date().toISOString());
   values.push(id);
-  db.prepare(
-    `UPDATE personalities SET ${fields.join(', ')} WHERE id = ?`,
-  ).run(...values);
+  db.prepare(`UPDATE personalities SET ${fields.join(', ')} WHERE id = ?`).run(
+    ...values,
+  );
 }
 
 export function getGroupFoldersByPersonality(personalityId: string): string[] {
   const rows = db
-    .prepare(
-      'SELECT folder FROM registered_groups WHERE personality_id = ?',
-    )
+    .prepare('SELECT folder FROM registered_groups WHERE personality_id = ?')
     .all(personalityId) as Array<{ folder: string }>;
   return rows.map((r) => r.folder);
 }
