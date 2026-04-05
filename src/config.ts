@@ -14,8 +14,7 @@ const envConfig = readEnvFile([
   'WEB_HOST',
 ]);
 
-export const API_TOKEN =
-  process.env.API_TOKEN || envConfig.API_TOKEN || '';
+export const API_TOKEN = process.env.API_TOKEN || envConfig.API_TOKEN || '';
 export const ASSISTANT_NAME =
   process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
 export const ASSISTANT_HAS_OWN_NUMBER =

@@ -60,13 +60,18 @@ export class WebChannel implements Channel {
 
     return new Promise<void>((resolve, reject) => {
       this.server!.listen(this.port, WEB_HOST, () => {
-        logger.info({ port: this.port, host: WEB_HOST }, 'Web channel listening');
+        logger.info(
+          { port: this.port, host: WEB_HOST },
+          'Web channel listening',
+        );
         if (WEB_HOST !== '127.0.0.1' && !API_TOKEN) {
           logger.warn(
             'Web channel is listening on a non-loopback address without API_TOKEN set. Set API_TOKEN in .env for security.',
           );
         }
-        console.log(`\n  Web UI: http://${WEB_HOST === '0.0.0.0' ? 'localhost' : WEB_HOST}:${this.port}\n`);
+        console.log(
+          `\n  Web UI: http://${WEB_HOST === '0.0.0.0' ? 'localhost' : WEB_HOST}:${this.port}\n`,
+        );
         resolve();
       });
       this.server!.on('error', reject);
@@ -141,7 +146,10 @@ export class WebChannel implements Channel {
       'Access-Control-Allow-Methods',
       'GET, POST, PATCH, DELETE, OPTIONS',
     );
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization',
+    );
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
