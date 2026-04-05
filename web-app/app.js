@@ -743,14 +743,22 @@
       try {
         var data = JSON.parse(e.data);
         if (data.type === 'message') {
-          // If on chat view, append message
+          // Only show messages for the currently selected chat group
+          var msgJid = data.chatJid || '';
+          var isForCurrentChat = !chatJid || !msgJid || msgJid === chatJid;
+
+          // Always store if for current chat (even if not on chat view)
+          if (isForCurrentChat) {
+            chatMessages.push({ text: data.text, cls: 'bot' });
+          }
+
+          // Append to DOM if on chat view
           var messagesDiv = document.getElementById('chat-messages');
           var typingDiv = document.getElementById('chat-typing');
-          if (messagesDiv && currentView === 'chat') {
+          if (messagesDiv && currentView === 'chat' && isForCurrentChat) {
             var emptyDiv = document.getElementById('chat-empty');
             if (emptyDiv) emptyDiv.style.display = 'none';
             if (typingDiv) typingDiv.classList.remove('visible');
-            chatMessages.push({ text: data.text, cls: 'bot' });
             appendChatMsg(messagesDiv, data.text, 'bot');
           }
         } else if (data.type === 'typing') {

@@ -297,6 +297,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
       if (text) {
         await channel.sendMessage(chatJid, text);
+        // Broadcast to web SSE so the dashboard sees responses from all channels
+        if (!channel.ownsJid(chatJid) || !('broadcastOutbound' in channel)) {
+          for (const ch of channels) {
+            if ('broadcastOutbound' in ch && ch !== channel) {
+              (ch as import('./channels/web.js').WebChannel).broadcastOutbound(
+                chatJid,
+                text,
+              );
+            }
+          }
+        }
         outputSentToUser = true;
       }
       // Only reset idle timer on actual results, not session-update markers (result: null)
@@ -729,14 +740,35 @@ async function main(): Promise<void> {
         return;
       }
       const text = formatOutbound(rawText);
-      if (text) await channel.sendMessage(jid, text);
+      if (text) {
+        await channel.sendMessage(jid, text);
+        // Broadcast to web SSE for dashboard visibility
+        for (const ch of channels) {
+          if ('broadcastOutbound' in ch && ch !== channel) {
+            (ch as import('./channels/web.js').WebChannel).broadcastOutbound(
+              jid,
+              text,
+            );
+          }
+        }
+      }
     },
   });
   startIpcWatcher({
     sendMessage: (jid, text) => {
       const channel = findChannel(channels, jid);
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
-      return channel.sendMessage(jid, text);
+      const result = channel.sendMessage(jid, text);
+      // Broadcast to web SSE for dashboard visibility
+      for (const ch of channels) {
+        if ('broadcastOutbound' in ch && ch !== channel) {
+          (ch as import('./channels/web.js').WebChannel).broadcastOutbound(
+            jid,
+            text,
+          );
+        }
+      }
+      return result;
     },
     registeredGroups: () => registeredGroups,
     registerGroup,

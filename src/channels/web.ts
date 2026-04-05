@@ -89,6 +89,7 @@ export class WebChannel implements Channel {
   async sendMessage(jid: string, text: string): Promise<void> {
     const event = JSON.stringify({
       type: 'message',
+      chatJid: jid,
       text,
       timestamp: new Date().toISOString(),
     });
@@ -98,6 +99,20 @@ export class WebChannel implements Channel {
 
   async setTyping(jid: string, isTyping: boolean): Promise<void> {
     const event = JSON.stringify({ type: 'typing', isTyping });
+    this.broadcast(`data: ${event}\n\n`);
+  }
+
+  /**
+   * Broadcast an outbound message from any channel to SSE clients.
+   * Called by index.ts so the dashboard can see responses from all channels.
+   */
+  broadcastOutbound(chatJid: string, text: string): void {
+    const event = JSON.stringify({
+      type: 'message',
+      chatJid,
+      text,
+      timestamp: new Date().toISOString(),
+    });
     this.broadcast(`data: ${event}\n\n`);
   }
 
@@ -262,7 +277,16 @@ export class WebChannel implements Channel {
             : DEFAULT_JID;
         const timestamp = new Date().toISOString();
 
-        this.opts.onChatMetadata(chatJid, timestamp, 'Web Chat', 'web', false);
+        // Only set web metadata for web JIDs — don't overwrite other channels
+        if (chatJid.startsWith(JID_PREFIX)) {
+          this.opts.onChatMetadata(
+            chatJid,
+            timestamp,
+            'Web Chat',
+            'web',
+            false,
+          );
+        }
 
         const group = this.opts.registeredGroups()[chatJid];
         if (!group) {
@@ -510,14 +534,17 @@ export class WebChannel implements Channel {
           script: data.script || null,
           schedule_type: data.schedule_type as 'cron' | 'interval' | 'once',
           schedule_value: data.schedule_value,
-          context_mode: (data.context_mode as 'group' | 'isolated') || 'isolated',
+          context_mode:
+            (data.context_mode as 'group' | 'isolated') || 'isolated',
           next_run: null as string | null,
           status: 'active' as const,
           created_at: new Date().toISOString(),
         };
 
         // Compute initial next_run
-        task.next_run = computeNextRun(task as import('../types.js').ScheduledTask);
+        task.next_run = computeNextRun(
+          task as import('../types.js').ScheduledTask,
+        );
 
         createTask(task);
         nudgeScheduler();
@@ -556,10 +583,7 @@ export class WebChannel implements Channel {
     res.end(JSON.stringify(result));
   }
 
-  private handleDeleteSession(
-    folder: string,
-    res: http.ServerResponse,
-  ): void {
+  private handleDeleteSession(folder: string, res: http.ServerResponse): void {
     deleteSession(folder);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
