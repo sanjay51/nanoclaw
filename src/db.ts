@@ -391,6 +391,30 @@ export function getMessagesSince(
     .all(chatJid, sinceTimestamp, `${botPrefix}:%`, limit) as NewMessage[];
 }
 
+/**
+ * Get full message history for a chat, including bot messages.
+ * Used by the management API for browsing conversation history.
+ */
+export function getMessageHistory(
+  chatJid: string,
+  limit: number = 50,
+  since?: string,
+): NewMessage[] {
+  const sinceTs = since || '';
+  const sql = `
+    SELECT * FROM (
+      SELECT id, chat_jid, sender, sender_name, content, timestamp, is_from_me, is_bot_message,
+             reply_to_message_id, reply_to_message_content, reply_to_sender_name
+      FROM messages
+      WHERE chat_jid = ? AND timestamp > ?
+        AND content != '' AND content IS NOT NULL
+      ORDER BY timestamp DESC
+      LIMIT ?
+    ) ORDER BY timestamp
+  `;
+  return db.prepare(sql).all(chatJid, sinceTs, limit) as NewMessage[];
+}
+
 export function getLastBotMessageTimestamp(
   chatJid: string,
   botPrefix: string,

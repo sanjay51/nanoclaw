@@ -535,7 +535,6 @@
           '<div class="dot' + (currentES ? ' connected' : '') + '" id="chat-dot"></div>' +
           '<select id="chat-group">' + groupOpts + '</select>' +
           '<span class="chat-header .status-text" id="chat-status">' + (currentES ? 'connected' : 'connecting...') + '</span>' +
-          '<div style="margin-left:auto"><button class="btn sm" id="load-history">Load History</button></div>' +
         '</div>' +
         '<div class="chat-messages" id="chat-messages">' +
           '<div class="empty-state" id="chat-empty">Send a message to start chatting.</div>' +
@@ -554,34 +553,34 @@
     var typingDiv = document.getElementById('chat-typing');
     var chatInputEl = document.getElementById('chat-input');
 
-    // Restore chat messages if we navigated away and back
-    if (chatMessages.length) {
-      emptyDiv.style.display = 'none';
-      chatMessages.forEach(function (m) {
-        appendChatMsg(messagesDiv, m.text, m.cls);
-      });
-    }
-
-    // Group selector
-    on('chat-group', 'change', function () {
-      chatJid = document.getElementById('chat-group').value;
+    // Load chat history for selected group
+    async function loadChatHistory() {
       chatMessages = [];
-      messagesDiv.innerHTML = '<div class="empty-state" id="chat-empty">Send a message to start chatting.</div>';
-    });
-
-    // Load history
-    on('load-history', 'click', async function () {
+      messagesDiv.innerHTML = '<div class="empty-state">Loading history...</div>';
       try {
-        var msgs = await api('GET', '/api/groups/' + encodeURIComponent(chatJid) + '/messages?limit=30');
-        if (!msgs.length) { toast('No messages'); return; }
-        chatMessages = [];
+        var msgs = await api('GET', '/api/groups/' + encodeURIComponent(chatJid) + '/messages?limit=50');
         messagesDiv.innerHTML = '';
+        if (!msgs.length) {
+          messagesDiv.innerHTML = '<div class="empty-state" id="chat-empty">No messages yet. Send one to start chatting.</div>';
+          return;
+        }
         msgs.forEach(function (m) {
-          var cls = m.is_from_me ? 'user' : 'bot';
+          var cls = (m.is_bot_message || m.is_from_me) ? 'bot' : 'user';
           chatMessages.push({ text: m.content, cls: cls });
           appendChatMsg(messagesDiv, m.content, cls);
         });
-      } catch (e) { toast(e.message, true); }
+      } catch (e) {
+        messagesDiv.innerHTML = '<div class="empty-state">Failed to load history</div>';
+      }
+    }
+
+    // Load on initial render
+    if (chatJid) loadChatHistory();
+
+    // Reload on group change
+    on('chat-group', 'change', function () {
+      chatJid = document.getElementById('chat-group').value;
+      loadChatHistory();
     });
 
     // Auto-resize textarea

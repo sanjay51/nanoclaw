@@ -11,7 +11,7 @@ import {
   getAllRegisteredGroups,
   getAllSessions,
   getAllTasks,
-  getMessagesSince,
+  getMessageHistory,
   getRegisteredGroup,
   getTaskById,
   getTaskRunLogs,
@@ -493,7 +493,7 @@ export class WebChannel implements Channel {
       parseInt(url.searchParams.get('limit') || '100', 10) || 100,
       500,
     );
-    const messages = getMessagesSince(jid, since, ASSISTANT_NAME, limit);
+    const messages = getMessageHistory(jid, limit, since || undefined);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(messages));
   }

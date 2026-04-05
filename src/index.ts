@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 
@@ -296,6 +297,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
       logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
       if (text) {
+        // Store bot response in DB for message history
+        storeMessage({
+          id: randomUUID(),
+          chat_jid: chatJid,
+          sender: ASSISTANT_NAME,
+          sender_name: ASSISTANT_NAME,
+          content: text,
+          timestamp: new Date().toISOString(),
+          is_from_me: true,
+          is_bot_message: true,
+        });
         await channel.sendMessage(chatJid, text);
         // Broadcast to web SSE so the dashboard sees responses from all channels
         if (!channel.ownsJid(chatJid) || !('broadcastOutbound' in channel)) {
