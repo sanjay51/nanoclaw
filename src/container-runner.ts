@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  CHROME_MCP_PORT,
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
   CONTAINER_TIMEOUT,
@@ -241,6 +242,13 @@ async function buildContainerArgs(
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
+
+  // Chrome MCP server URL (accessible via host gateway)
+  args.push('-e', `CHROME_MCP_URL=http://host.docker.internal:${CHROME_MCP_PORT}/mcp`);
+
+  // Bypass proxy for host-local services (Chrome MCP, etc.)
+  args.push('-e', 'NO_PROXY=host.docker.internal,localhost,127.0.0.1');
+  args.push('-e', 'no_proxy=host.docker.internal,localhost,127.0.0.1');
 
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.

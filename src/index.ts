@@ -5,6 +5,8 @@ import { OneCLI } from '@onecli-sh/sdk';
 
 import {
   ASSISTANT_NAME,
+  CHROME_CDP_URL,
+  CHROME_MCP_PORT,
   DEFAULT_TRIGGER,
   getTriggerPattern,
   GROUPS_DIR,
@@ -14,6 +16,7 @@ import {
   POLL_INTERVAL,
   TIMEZONE,
 } from './config.js';
+import { startChromeMcpServer } from './chrome-mcp-server.js';
 import './channels/index.js';
 import {
   getChannelFactory,
@@ -703,6 +706,11 @@ async function main(): Promise<void> {
     logger.fatal('No channels connected');
     process.exit(1);
   }
+
+  // Start Chrome MCP server (bridges CDP to containers)
+  startChromeMcpServer(CHROME_MCP_PORT, CHROME_CDP_URL).catch((err) =>
+    logger.warn({ err }, 'Chrome MCP server failed to start (Chrome may not be running with --remote-debugging-port)'),
+  );
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({

@@ -469,6 +469,7 @@ async function runQuery(
         'Skill',
         'NotebookEdit',
         'mcp__nanoclaw__*',
+        'mcp__chrome__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -484,6 +485,14 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
           },
         },
+        ...(process.env.CHROME_MCP_URL
+          ? {
+              chrome: {
+                type: 'http' as const,
+                url: process.env.CHROME_MCP_URL,
+              },
+            }
+          : {}),
       },
       hooks: {
         PreCompact: [
