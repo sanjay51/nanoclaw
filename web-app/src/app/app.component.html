@@ -1,0 +1,37 @@
+@if (!auth.connected()) {
+  <app-connect />
+} @else {
+  <div class="flex h-screen">
+    <!-- Sidebar -->
+    <aside class="w-52 min-w-52 bg-surface border-r border-border flex flex-col">
+      <div class="px-4 py-3 border-b border-border flex items-center gap-2">
+        <h1 class="text-sm font-bold tracking-tight flex-1">{{ auth.assistantName() }}</h1>
+        <button (click)="disconnect()" class="text-xs px-1.5 py-0.5 border border-red-500/30 text-red-400 rounded hover:bg-red-500/10" title="Disconnect">&times;</button>
+      </div>
+
+      <nav class="flex-1 p-2 space-y-0.5">
+        @for (item of navItems; track item.path) {
+          <a [routerLink]="item.path" routerLinkActive="bg-zinc-800 text-white font-medium"
+             class="flex items-center gap-2.5 px-3 py-2 rounded text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors">
+            <span class="w-4 text-center text-xs">{{ item.icon }}</span>
+            <span>{{ item.label }}</span>
+          </a>
+        }
+      </nav>
+
+      <div class="px-4 py-2.5 border-t border-border">
+        <div class="flex items-center gap-2 text-xs text-zinc-500">
+          <span class="w-1.5 h-1.5 rounded-full" [class.bg-green-500]="sse.connected()" [class.bg-red-500]="!sse.connected()"></span>
+          {{ sse.connected() ? 'connected' : 'disconnected' }}
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <router-outlet />
+    </main>
+  </div>
+}
+
+<app-toast />

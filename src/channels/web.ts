@@ -240,10 +240,7 @@ export class WebChannel implements Channel {
       this.handleRegisterGroup(req, res);
     } else if (url.pathname === '/api/upload' && req.method === 'POST') {
       this.handleUpload(req, res, url);
-    } else if (
-      url.pathname.startsWith('/api/files/') &&
-      req.method === 'GET'
-    ) {
+    } else if (url.pathname.startsWith('/api/files/') && req.method === 'GET') {
       this.handleServeFile(url, res);
     } else if (url.pathname === '/api/logs' && req.method === 'GET') {
       this.handleGetLogs(url, res);
@@ -691,7 +688,11 @@ export class WebChannel implements Channel {
         const attachDir = path.join(groupDir, 'attachments');
         fs.mkdirSync(attachDir, { recursive: true });
 
-        const saved: Array<{ filename: string; path: string; containerPath: string }> = [];
+        const saved: Array<{
+          filename: string;
+          path: string;
+          containerPath: string;
+        }> = [];
         for (const file of files) {
           // Sanitize filename
           const safeName = `upload_${Date.now()}_${file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
@@ -764,7 +765,10 @@ export class WebChannel implements Channel {
     const filePath = parts.slice(1).join('/');
 
     // Only allow serving from attachments/ and generated/ subdirs
-    if (!filePath.startsWith('attachments/') && !filePath.startsWith('generated/')) {
+    if (
+      !filePath.startsWith('attachments/') &&
+      !filePath.startsWith('generated/')
+    ) {
       res.writeHead(403);
       res.end();
       return;
