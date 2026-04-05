@@ -365,6 +365,8 @@ body {
 
 .data-table tr.clickable { cursor: pointer; }
 .data-table tr.clickable:hover td { background: var(--surface2); color: var(--text); }
+.data-table .clickable-cell { cursor: pointer; }
+.data-table .clickable-cell:hover { color: var(--accent); }
 
 /* ---- Badges ---- */
 .badge {
@@ -756,6 +758,25 @@ body {
   background: var(--border);
   margin: 20px 0;
 }
+
+/* ---- Log viewer ---- */
+.log-viewer {
+  background: #0d0d0d;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-error { color: var(--red); }
+.log-warn { color: var(--yellow); }
 
 .truncate {
   white-space: nowrap;

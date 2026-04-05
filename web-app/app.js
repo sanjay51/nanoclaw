@@ -126,6 +126,7 @@
       case 'dashboard': renderDashboard(); break;
       case 'groups': renderGroups(); break;
       case 'group-detail': renderGroupDetail(); break;
+      case 'group-register': renderGroupRegister(); break;
       case 'tasks': renderTasks(); break;
       case 'task-detail': renderTaskDetail(); break;
       case 'task-create': renderTaskCreate(); break;
@@ -147,22 +148,35 @@
   }
 
   // ================================================================
-  // VIEW: Dashboard
+  // VIEW: Dashboard (auto-refreshes every 10s when visible)
   // ================================================================
-  async function renderDashboard() {
-    if (!statusData) await refreshStatus();
-    var s = statusData || { channels: [], groups: [], tasks: [], chats: [] };
+  var dashboardTimer = null;
 
+  async function renderDashboard() {
+    if (dashboardTimer) { clearInterval(dashboardTimer); dashboardTimer = null; }
+    await refreshStatus();
+    buildDashboardHTML();
+    dashboardTimer = setInterval(async function () {
+      if (currentView !== 'dashboard') { clearInterval(dashboardTimer); dashboardTimer = null; return; }
+      await refreshStatus();
+      buildDashboardHTML();
+    }, 10000);
+  }
+
+  function buildDashboardHTML() {
+    var s = statusData || { channels: [], groups: [], tasks: [], chats: [] };
     var connectedChannels = s.channels.filter(function (c) { return c.connected; }).length;
     var activeTasks = s.tasks.filter(function (t) { return t.status === 'active'; }).length;
+    var pausedTasks = s.tasks.filter(function (t) { return t.status === 'paused'; }).length;
 
     mainContent.innerHTML =
-      '<div class="view-header"><h2>Dashboard</h2></div>' +
+      '<div class="view-header"><h2>Dashboard</h2><div class="actions"><span style="font-size:11px;color:var(--text-muted)">Auto-refreshes every 10s</span></div></div>' +
       '<div class="view-body">' +
         '<div class="stat-grid">' +
           statCard(connectedChannels + '/' + s.channels.length, 'Channels') +
           statCard(s.groups.length, 'Groups') +
           statCard(activeTasks, 'Active Tasks') +
+          statCard(pausedTasks, 'Paused Tasks') +
           statCard(s.chats.length, 'Chats') +
         '</div>' +
 
@@ -171,8 +185,23 @@
           s.channels.map(function (ch) {
             return '<tr><td>' + esc(ch.name) + '</td>' +
               '<td><span class="badge ' + (ch.connected ? 'online' : 'offline') + '">' + (ch.connected ? 'online' : 'offline') + '</span></td>' +
-              '<td>' + (ch.groups || []).length + '</td></tr>';
+              '<td>' + (ch.groups || []).map(function (g) { return esc(g.name); }).join(', ') + '</td></tr>';
           }).join('') + '</tbody></table>' : '<div class="empty-hint">No channels</div>') +
+        '</div>' +
+
+        '<div class="detail-section"><h3>Upcoming Tasks</h3>' +
+        (function () {
+          var upcoming = s.tasks.filter(function (t) { return t.status === 'active' && t.nextRun; })
+            .sort(function (a, b) { return (a.nextRun || '').localeCompare(b.nextRun || ''); })
+            .slice(0, 5);
+          if (!upcoming.length) return '<div class="empty-hint">No upcoming tasks</div>';
+          return '<table class="data-table"><thead><tr><th>Prompt</th><th>Next Run</th><th>Schedule</th></tr></thead><tbody>' +
+            upcoming.map(function (t) {
+              return '<tr><td><span class="truncate">' + esc(t.prompt) + '</span></td>' +
+                '<td>' + relTime(t.nextRun) + '</td>' +
+                '<td>' + esc(t.type) + ': <code>' + esc(t.value) + '</code></td></tr>';
+            }).join('') + '</tbody></table>';
+        })() +
         '</div>' +
 
         '<div class="detail-section"><h3>Recent Activity</h3>' +
@@ -194,10 +223,11 @@
   // VIEW: Groups
   // ================================================================
   async function renderGroups() {
-    mainContent.innerHTML = '<div class="view-header"><h2>Groups</h2></div><div class="view-body"><div class="empty-hint">Loading...</div></div>';
+    mainContent.innerHTML = '<div class="view-header"><h2>Groups</h2><div class="actions"><button class="btn primary" id="new-group">+ Register Group</button></div></div><div class="view-body"><div class="empty-hint">Loading...</div></div>';
+    on('new-group', 'click', function () { navigate('group-register'); });
     try {
       var groups = await api('GET', '/api/groups');
-      var body = '<div class="view-header"><h2>Groups</h2></div><div class="view-body">';
+      var body = '<div class="view-header"><h2>Groups</h2><div class="actions"><button class="btn primary" id="new-group2">+ Register Group</button></div></div><div class="view-body">';
       if (!groups.length) {
         body += '<div class="empty-hint">No groups registered</div>';
       } else {
@@ -217,6 +247,7 @@
       body += '</div>';
       mainContent.innerHTML = body;
 
+      on('new-group2', 'click', function () { navigate('group-register'); });
       mainContent.querySelectorAll('tr.clickable').forEach(function (tr) {
         tr.addEventListener('click', function () {
           navigate('group-detail', { jid: tr.dataset.jid });
@@ -225,6 +256,81 @@
     } catch (e) {
       mainContent.innerHTML = '<div class="view-header"><h2>Groups</h2></div><div class="view-body"><div class="empty-hint">Error: ' + esc(e.message) + '</div></div>';
     }
+  }
+
+  // ================================================================
+  // VIEW: Group Register
+  // ================================================================
+  async function renderGroupRegister() {
+    var chats = [];
+    try { chats = await api('GET', '/api/chats'); } catch (e) { /* ignore */ }
+    var groups = [];
+    try { groups = await api('GET', '/api/groups'); } catch (e) { /* ignore */ }
+    var registeredJids = {};
+    groups.forEach(function (g) { registeredJids[g.jid] = true; });
+    var unregistered = chats.filter(function (c) { return c.is_group && !registeredJids[c.jid]; });
+
+    var chatOpts = '<option value="">-- Select a chat or enter manually --</option>' +
+      unregistered.map(function (c) {
+        return '<option value="' + esc(c.jid) + '">' + esc(c.name || c.jid) + ' (' + esc(c.channel || '?') + ')</option>';
+      }).join('');
+
+    mainContent.innerHTML =
+      '<div class="view-header"><button class="back-link" id="back-groups-reg">&larr; Groups</button><h2>Register Group</h2></div>' +
+      '<div class="view-body">' +
+        (unregistered.length ? '<div class="detail-section"><h3>Select Existing Chat</h3>' +
+          '<div class="form-grid">' +
+            formField('Chat', '<select id="rg-chat">' + chatOpts + '</select>', 'Unregistered group chats') +
+          '</div></div><div class="section-divider"></div>' : '') +
+        '<div class="detail-section"><h3>Group Details</h3>' +
+        '<div class="form-grid">' +
+          formField('JID', '<input id="rg-jid" placeholder="e.g. tg:-100123456 or web:mygroup">', 'Channel-specific identifier') +
+          formField('Name', '<input id="rg-name" placeholder="Group name">') +
+          formField('Folder', '<input id="rg-folder" placeholder="e.g. my_group (alphanumeric, _, -)">', 'Unique folder name for this group\'s data') +
+          formField('Trigger', '<input id="rg-trigger" placeholder="@' + esc(assistantName) + '">', 'Pattern to trigger the bot') +
+          formField('Requires Trigger', '<select id="rg-reqtrigger"><option value="true">Yes</option><option value="false">No</option></select>') +
+        '</div></div>' +
+        '<div class="form-actions">' +
+          '<button class="btn primary" id="register-group">Register Group</button>' +
+          '<button class="btn" id="cancel-reg">Cancel</button>' +
+        '</div>' +
+      '</div>';
+
+    wireBack('back-groups-reg', 'groups');
+    on('cancel-reg', 'click', function () { navigate('groups'); });
+
+    // Auto-fill from chat selector
+    on('rg-chat', 'change', function () {
+      var sel = document.getElementById('rg-chat');
+      var jid = sel.value;
+      if (!jid) return;
+      var chat = unregistered.find(function (c) { return c.jid === jid; });
+      if (chat) {
+        document.getElementById('rg-jid').value = chat.jid;
+        document.getElementById('rg-name').value = chat.name || '';
+        var folder = (chat.name || chat.jid).toLowerCase().replace(/[^a-z0-9_-]/g, '_').replace(/_+/g, '_').slice(0, 30);
+        document.getElementById('rg-folder').value = folder;
+      }
+    });
+
+    on('register-group', 'click', async function () {
+      var jid = document.getElementById('rg-jid').value.trim();
+      var name = document.getElementById('rg-name').value.trim();
+      var folder = document.getElementById('rg-folder').value.trim();
+      if (!jid || !name || !folder) { toast('JID, name, and folder are required', true); return; }
+      try {
+        await api('POST', '/api/groups', {
+          jid: jid,
+          name: name,
+          folder: folder,
+          trigger: document.getElementById('rg-trigger').value.trim() || undefined,
+          requiresTrigger: document.getElementById('rg-reqtrigger').value === 'true',
+        });
+        toast('Group registered');
+        refreshStatus();
+        navigate('groups');
+      } catch (e) { toast(e.message, true); }
+    });
   }
 
   // ================================================================
@@ -352,15 +458,20 @@
       if (!tasks.length) {
         html += '<div class="empty-hint">No scheduled tasks</div>';
       } else {
-        html += '<table class="data-table"><thead><tr><th>Prompt</th><th>Group</th><th>Schedule</th><th>Status</th><th>Next Run</th><th>Last Run</th></tr></thead><tbody>';
+        html += '<table class="data-table"><thead><tr><th>Prompt</th><th>Group</th><th>Schedule</th><th>Status</th><th>Next Run</th><th>Actions</th></tr></thead><tbody>';
         tasks.forEach(function (t) {
-          html += '<tr class="clickable" data-id="' + esc(t.id) + '">' +
-            '<td><span class="truncate">' + esc(t.prompt) + '</span></td>' +
+          var toggleBtn = t.status === 'active'
+            ? '<button class="btn sm task-toggle" data-id="' + esc(t.id) + '" data-action="pause">Pause</button>'
+            : t.status === 'paused'
+            ? '<button class="btn sm primary task-toggle" data-id="' + esc(t.id) + '" data-action="resume">Resume</button>'
+            : '';
+          html += '<tr>' +
+            '<td class="clickable-cell" data-id="' + esc(t.id) + '"><span class="truncate">' + esc(t.prompt) + '</span></td>' +
             '<td><code>' + esc(t.group) + '</code></td>' +
             '<td>' + esc(t.type) + ': <code>' + esc(t.value) + '</code></td>' +
             '<td><span class="badge ' + t.status + '">' + t.status + '</span></td>' +
             '<td>' + relTime(t.nextRun) + '</td>' +
-            '<td>' + relTime(t.lastRun) + '</td></tr>';
+            '<td>' + toggleBtn + '</td></tr>';
         });
         html += '</tbody></table>';
       }
@@ -368,9 +479,23 @@
       mainContent.innerHTML = html;
 
       on('new-task2', 'click', function () { navigate('task-create'); });
-      mainContent.querySelectorAll('tr.clickable').forEach(function (tr) {
-        tr.addEventListener('click', function () {
-          navigate('task-detail', { id: tr.dataset.id });
+      mainContent.querySelectorAll('.clickable-cell').forEach(function (td) {
+        td.style.cursor = 'pointer';
+        td.addEventListener('click', function () {
+          navigate('task-detail', { id: td.dataset.id });
+        });
+      });
+      mainContent.querySelectorAll('.task-toggle').forEach(function (btn) {
+        btn.addEventListener('click', async function (e) {
+          e.stopPropagation();
+          var action = btn.dataset.action;
+          var newStatus = action === 'pause' ? 'paused' : 'active';
+          try {
+            await api('PATCH', '/api/tasks/' + encodeURIComponent(btn.dataset.id), { status: newStatus });
+            toast('Task ' + action + 'd');
+            await refreshStatus();
+            renderTasks();
+          } catch (err) { toast(err.message, true); }
         });
       });
     } catch (e) {
@@ -692,6 +817,14 @@
         : '<div class="empty-hint">No chats</div>') +
         '</div>' +
 
+        '<div class="detail-section"><h3>Recent Logs</h3>' +
+          '<div style="display:flex;gap:8px;margin-bottom:10px">' +
+            '<button class="btn sm" id="load-logs" data-type="all">All Logs</button>' +
+            '<button class="btn sm danger" id="load-error-logs" data-type="error">Error Logs</button>' +
+          '</div>' +
+          '<div id="log-area"><div class="empty-hint">Click a button to load logs</div></div>' +
+        '</div>' +
+
         '</div>';
 
       mainContent.innerHTML = html;
@@ -706,6 +839,29 @@
           } catch (e) { toast(e.message, true); }
         });
       });
+
+      // Wire log buttons
+      async function loadLogs(type) {
+        var area = document.getElementById('log-area');
+        area.innerHTML = '<div class="empty-hint">Loading...</div>';
+        try {
+          var data = await api('GET', '/api/logs?type=' + type + '&lines=80');
+          var lines = data.lines || [];
+          if (!lines.length) {
+            area.innerHTML = '<div class="empty-hint">No logs</div>';
+            return;
+          }
+          area.innerHTML = '<pre class="log-viewer">' + lines.map(function (l) {
+            var escaped = esc(l);
+            if (/error|ERR/i.test(l)) return '<span class="log-error">' + escaped + '</span>';
+            if (/warn|WARN/i.test(l)) return '<span class="log-warn">' + escaped + '</span>';
+            return escaped;
+          }).join('\n') + '</pre>';
+          area.querySelector('.log-viewer').scrollTop = area.querySelector('.log-viewer').scrollHeight;
+        } catch (e) { area.innerHTML = '<div class="empty-hint">Failed to load logs: ' + esc(e.message) + '</div>'; }
+      }
+      on('load-logs', 'click', function () { loadLogs('all'); });
+      on('load-error-logs', 'click', function () { loadLogs('error'); });
 
     } catch (e) {
       mainContent.innerHTML = '<div class="view-header"><h2>System</h2></div><div class="view-body"><div class="empty-hint">Error: ' + esc(e.message) + '</div></div>';

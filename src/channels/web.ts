@@ -1,4 +1,6 @@
+import fs from 'fs';
 import http from 'http';
+import path from 'path';
 import { randomUUID } from 'crypto';
 
 import { API_TOKEN, ASSISTANT_NAME, WEB_HOST } from '../config.js';
@@ -233,6 +235,10 @@ export class WebChannel implements Channel {
       this.handleDeleteSession(decodeURIComponent(sessionMatch[1]), res);
     } else if (url.pathname === '/api/chats' && req.method === 'GET') {
       this.handleGetChats(res);
+    } else if (url.pathname === '/api/groups' && req.method === 'POST') {
+      this.handleRegisterGroup(req, res);
+    } else if (url.pathname === '/api/logs' && req.method === 'GET') {
+      this.handleGetLogs(url, res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -595,6 +601,75 @@ export class WebChannel implements Channel {
     const chats = getAllChats();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(chats));
+  }
+
+  // ---- Group registration ----
+
+  private handleRegisterGroup(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (!data.jid || !data.name || !data.folder) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({ error: 'Required: jid, name, folder' }),
+          );
+          return;
+        }
+        const group = {
+          name: data.name,
+          folder: data.folder,
+          trigger: data.trigger || `@${ASSISTANT_NAME}`,
+          added_at: new Date().toISOString(),
+          requiresTrigger:
+            data.requiresTrigger !== undefined ? data.requiresTrigger : true,
+          isMain: false,
+          containerConfig: data.containerConfig || undefined,
+        };
+        setRegisteredGroup(data.jid, group);
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, jid: data.jid }));
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : 'Invalid request';
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: msg }));
+      }
+    });
+  }
+
+  // ---- Logs ----
+
+  private handleGetLogs(url: URL, res: http.ServerResponse): void {
+    const lines = parseInt(url.searchParams.get('lines') || '100', 10) || 100;
+    const type = url.searchParams.get('type') === 'error' ? 'error' : 'all';
+
+    const logDir = path.resolve(process.cwd(), 'logs');
+    const logFile =
+      type === 'error'
+        ? path.join(logDir, 'nanoclaw.error.log')
+        : path.join(logDir, 'nanoclaw.log');
+
+    try {
+      if (!fs.existsSync(logFile)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ lines: [] }));
+        return;
+      }
+      const content = fs.readFileSync(logFile, 'utf-8');
+      const allLines = content.split('\n').filter((l) => l.trim());
+      const result = allLines.slice(-Math.min(lines, 500));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ lines: result }));
+    } catch {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Failed to read logs' }));
+    }
   }
 
   private handleStatus(res: http.ServerResponse): void {
