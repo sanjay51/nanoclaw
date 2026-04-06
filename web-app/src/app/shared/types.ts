@@ -100,6 +100,17 @@ export interface MessageItem {
   is_bot_message: number;
 }
 
+export interface CredentialItem {
+  id: string;
+  name: string;
+  website: string;
+  username: string;
+  has_password: boolean;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SseEvent {
   type: 'message' | 'typing';
   chatJid?: string;

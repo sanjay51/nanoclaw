@@ -604,6 +604,77 @@ Supported qualities: standard, hd`,
   },
 );
 
+server.tool(
+  'get_credentials',
+  `Retrieve stored credentials by name. The user manages credentials through the web dashboard.
+Use this when the user asks you to log into a website, use an API, or when you need authentication details.
+Search by name (case-insensitive partial match) or leave empty to list all credential names (without secrets).`,
+  {
+    name: z.string().optional().describe('Name to search for (partial match). Omit to list all credential names.'),
+  },
+  async (args) => {
+    if (!isMain) {
+      return {
+        content: [{ type: 'text' as const, text: 'Credentials are only accessible from the main group.' }],
+        isError: true,
+      };
+    }
+
+    const credentialsFile = path.join(IPC_DIR, 'credentials.json');
+
+    if (!fs.existsSync(credentialsFile)) {
+      return {
+        content: [{ type: 'text' as const, text: 'No credentials available. Ask the user to add them via the web dashboard.' }],
+      };
+    }
+
+    try {
+      const allCredentials = JSON.parse(fs.readFileSync(credentialsFile, 'utf-8')) as Array<{
+        name: string; website: string; username: string; password: string; notes: string;
+      }>;
+
+      if (allCredentials.length === 0) {
+        return {
+          content: [{ type: 'text' as const, text: 'No credentials stored. Ask the user to add them via the web dashboard.' }],
+        };
+      }
+
+      if (!args.name) {
+        // List mode — names only, no passwords
+        const list = allCredentials.map(c =>
+          `- ${c.name}${c.website ? ` (${c.website})` : ''}${c.username ? ` — user: ${c.username}` : ''}`
+        ).join('\n');
+        return {
+          content: [{ type: 'text' as const, text: `Stored credentials:\n${list}\n\nCall get_credentials with a name to retrieve full details including password.` }],
+        };
+      }
+
+      // Search mode — return matching credentials with passwords
+      const query = args.name.toLowerCase();
+      const matches = allCredentials.filter(c => c.name.toLowerCase().includes(query));
+
+      if (matches.length === 0) {
+        return {
+          content: [{ type: 'text' as const, text: `No credentials found matching "${args.name}".` }],
+        };
+      }
+
+      const results = matches.map(c =>
+        `Name: ${c.name}\nWebsite: ${c.website || '(none)'}\nUsername: ${c.username || '(none)'}\nPassword: ${c.password || '(not set)'}\nNotes: ${c.notes || '(none)'}`
+      );
+
+      return {
+        content: [{ type: 'text' as const, text: results.join('\n---\n') }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text' as const, text: `Error reading credentials: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

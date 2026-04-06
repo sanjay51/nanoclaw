@@ -27,7 +27,7 @@ import {
 } from './container-runtime.js';
 import { OneCLI } from '@onecli-sh/sdk';
 import { validateAdditionalMounts } from './mount-security.js';
-import { RegisteredGroup } from './types.js';
+import { Credential, RegisteredGroup } from './types.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
 
@@ -753,4 +753,36 @@ export function writeGroupsSnapshot(
       2,
     ),
   );
+}
+
+/**
+ * Write decrypted credentials to the IPC directory for the container agent to read.
+ * Only written for the main group — non-main groups get no credentials file.
+ */
+export function writeCredentialsSnapshot(
+  groupFolder: string,
+  isMain: boolean,
+  credentials: Credential[],
+  decryptFn: (encrypted: string) => string,
+): void {
+  const groupIpcDir = resolveGroupIpcPath(groupFolder);
+  fs.mkdirSync(groupIpcDir, { recursive: true });
+
+  const credentialsFile = path.join(groupIpcDir, 'credentials.json');
+
+  if (!isMain) {
+    // Non-main groups don't get credentials
+    if (fs.existsSync(credentialsFile)) fs.unlinkSync(credentialsFile);
+    return;
+  }
+
+  const decrypted = credentials.map((c) => ({
+    name: c.name,
+    website: c.website,
+    username: c.username,
+    password: c.password_encrypted ? decryptFn(c.password_encrypted) : '',
+    notes: c.notes,
+  }));
+
+  fs.writeFileSync(credentialsFile, JSON.stringify(decrypted, null, 2));
 }

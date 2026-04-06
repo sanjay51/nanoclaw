@@ -28,6 +28,7 @@ export class AppComponent implements OnInit {
     { path: '/groups', label: 'Groups', icon: '\u2605' },
     { path: '/tasks', label: 'Tasks', icon: '\u23F0' },
     { path: '/personalities', label: 'Personalities', icon: '\u2728' },
+    { path: '/credentials', label: 'Credentials', icon: '\uD83D\uDD12' },
     { path: '/system', label: 'System', icon: '\u2699' },
   ];
 

@@ -110,6 +110,20 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.selectedPersonalityId.set(group?.personalityId || '');
   }
 
+  async clearContext(): Promise<void> {
+    const folder = this.getFolder();
+    if (!folder) {
+      this.toast.show('No group selected', true);
+      return;
+    }
+    try {
+      await this.api.deleteSession(folder);
+      this.toast.show('Context cleared — next message starts a fresh session');
+    } catch (e: any) {
+      this.toast.show(e.message, true);
+    }
+  }
+
   async loadHistory(): Promise<void> {
     this.loading.set(true);
     try {

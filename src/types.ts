@@ -51,6 +51,17 @@ export interface Personality {
   updated_at: string;
 }
 
+export interface Credential {
+  id: string;
+  name: string;
+  website: string;
+  username: string;
+  password_encrypted: string;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface NewMessage {
   id: string;
   chat_jid: string;

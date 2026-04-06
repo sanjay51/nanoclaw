@@ -1,3 +1,4 @@
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
@@ -6,6 +7,7 @@ import { ASSISTANT_NAME, DATA_DIR, STORE_DIR } from './config.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import {
+  Credential,
   NewMessage,
   Personality,
   RegisteredGroup,
@@ -174,6 +176,20 @@ function createSchema(database: Database.Database): void {
   } catch {
     /* column already exists */
   }
+
+  // Credentials table for storing website/service credentials
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS credentials (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      website TEXT NOT NULL DEFAULT '',
+      username TEXT NOT NULL DEFAULT '',
+      password_encrypted TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
 }
 
 export function initDatabase(): void {
@@ -825,6 +841,89 @@ export function deletePersonality(id: string): void {
     `UPDATE registered_groups SET personality_id = NULL WHERE personality_id = ?`,
   ).run(id);
   db.prepare('DELETE FROM personalities WHERE id = ?').run(id);
+}
+
+// --- Credential encryption helpers ---
+
+const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
+
+function getEncryptionKey(): Buffer {
+  // Derive a stable key from a machine-specific secret stored alongside the DB
+  const keyFile = path.join(STORE_DIR, '.credential-key');
+  let secret: string;
+  if (fs.existsSync(keyFile)) {
+    secret = fs.readFileSync(keyFile, 'utf-8').trim();
+  } else {
+    secret = randomBytes(32).toString('hex');
+    fs.mkdirSync(path.dirname(keyFile), { recursive: true });
+    fs.writeFileSync(keyFile, secret, { mode: 0o600 });
+  }
+  return scryptSync(secret, 'nanoclaw-credentials', 32);
+}
+
+export function encryptPassword(plaintext: string): string {
+  if (!plaintext) return '';
+  const key = getEncryptionKey();
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  // Store as iv:authTag:encrypted (all hex)
+  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
+}
+
+export function decryptPassword(ciphertext: string): string {
+  if (!ciphertext) return '';
+  const key = getEncryptionKey();
+  const [ivHex, authTagHex, encryptedHex] = ciphertext.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+  const encrypted = Buffer.from(encryptedHex, 'hex');
+  const decipher = createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+  return decipher.update(encrypted) + decipher.final('utf8');
+}
+
+// --- Credential accessors ---
+
+export function createCredential(c: Credential): void {
+  db.prepare(
+    `INSERT INTO credentials (id, name, website, username, password_encrypted, notes, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(c.id, c.name, c.website, c.username, c.password_encrypted, c.notes, c.created_at, c.updated_at);
+}
+
+export function getCredentialById(id: string): Credential | undefined {
+  return db.prepare('SELECT * FROM credentials WHERE id = ?').get(id) as Credential | undefined;
+}
+
+export function getAllCredentials(): Credential[] {
+  return db.prepare('SELECT * FROM credentials ORDER BY name').all() as Credential[];
+}
+
+export function updateCredential(
+  id: string,
+  updates: Partial<Pick<Credential, 'name' | 'website' | 'username' | 'password_encrypted' | 'notes'>>,
+): void {
+  const fields: string[] = [];
+  const values: unknown[] = [];
+
+  if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
+  if (updates.website !== undefined) { fields.push('website = ?'); values.push(updates.website); }
+  if (updates.username !== undefined) { fields.push('username = ?'); values.push(updates.username); }
+  if (updates.password_encrypted !== undefined) { fields.push('password_encrypted = ?'); values.push(updates.password_encrypted); }
+  if (updates.notes !== undefined) { fields.push('notes = ?'); values.push(updates.notes); }
+
+  if (fields.length === 0) return;
+
+  fields.push('updated_at = ?');
+  values.push(new Date().toISOString());
+  values.push(id);
+  db.prepare(`UPDATE credentials SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+}
+
+export function deleteCredential(id: string): void {
+  db.prepare('DELETE FROM credentials WHERE id = ?').run(id);
 }
 
 // --- JSON migration ---

@@ -5,17 +5,23 @@ import { randomUUID } from 'crypto';
 
 import { API_TOKEN, ASSISTANT_NAME, WEB_HOST } from '../config.js';
 import {
+  createCredential,
   createPersonality,
   createTask,
+  decryptPassword,
+  deleteCredential,
   deletePersonality,
   deleteRegisteredGroup,
   deleteSession,
   deleteTask,
+  encryptPassword,
   getAllChats,
+  getAllCredentials,
   getAllPersonalities,
   getAllRegisteredGroups,
   getAllSessions,
   getAllTasks,
+  getCredentialById,
   getGroupFoldersByPersonality,
   getMessageHistory,
   getPersonalityById,
@@ -23,6 +29,7 @@ import {
   getTaskById,
   getTaskRunLogs,
   setRegisteredGroup,
+  updateCredential,
   updatePersonality,
   updateTask,
 } from '../db.js';
@@ -206,6 +213,9 @@ export class WebChannel implements Channel {
     const personalityMatch = url.pathname.match(
       /^\/api\/personalities\/([^/]+)$/,
     );
+    const credentialMatch = url.pathname.match(
+      /^\/api\/credentials\/([^/]+)$/,
+    );
 
     if (url.pathname === '/' && req.method === 'GET') {
       this.serveUI(res);
@@ -261,6 +271,14 @@ export class WebChannel implements Channel {
       this.handleUpdatePersonality(personalityMatch[1], req, res);
     } else if (personalityMatch && req.method === 'DELETE') {
       this.handleDeletePersonality(personalityMatch[1], res);
+    } else if (url.pathname === '/api/credentials' && req.method === 'GET') {
+      this.handleGetCredentials(res);
+    } else if (url.pathname === '/api/credentials' && req.method === 'POST') {
+      this.handleCreateCredential(req, res);
+    } else if (credentialMatch && req.method === 'PATCH') {
+      this.handleUpdateCredential(credentialMatch[1], req, res);
+    } else if (credentialMatch && req.method === 'DELETE') {
+      this.handleDeleteCredential(credentialMatch[1], res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -967,6 +985,126 @@ export class WebChannel implements Channel {
       return;
     }
     deletePersonality(id);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  }
+
+  // --- Credential handlers ---
+
+  private handleGetCredentials(res: http.ServerResponse): void {
+    const credentials = getAllCredentials().map((c) => ({
+      id: c.id,
+      name: c.name,
+      website: c.website,
+      username: c.username,
+      has_password: !!c.password_encrypted,
+      notes: c.notes,
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+    }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(credentials));
+  }
+
+  private handleCreateCredential(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (!data.name || typeof data.name !== 'string') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Required: name' }));
+          return;
+        }
+        const now = new Date().toISOString();
+        const credential = {
+          id: randomUUID(),
+          name: data.name,
+          website: data.website || '',
+          username: data.username || '',
+          password_encrypted: data.password ? encryptPassword(data.password) : '',
+          notes: data.notes || '',
+          created_at: now,
+          updated_at: now,
+        };
+        createCredential(credential);
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          id: credential.id,
+          name: credential.name,
+          website: credential.website,
+          username: credential.username,
+          has_password: !!credential.password_encrypted,
+          notes: credential.notes,
+          created_at: credential.created_at,
+          updated_at: credential.updated_at,
+        }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleUpdateCredential(
+    id: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const existing = getCredentialById(id);
+        if (!existing) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Credential not found' }));
+          return;
+        }
+        const data = JSON.parse(body);
+        const updates: Record<string, string> = {};
+        if (typeof data.name === 'string') updates.name = data.name;
+        if (typeof data.website === 'string') updates.website = data.website;
+        if (typeof data.username === 'string') updates.username = data.username;
+        if (typeof data.password === 'string') updates.password_encrypted = encryptPassword(data.password);
+        if (typeof data.notes === 'string') updates.notes = data.notes;
+        if (Object.keys(updates).length === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'No valid fields to update' }));
+          return;
+        }
+        updateCredential(id, updates);
+        const updated = getCredentialById(id)!;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          id: updated.id,
+          name: updated.name,
+          website: updated.website,
+          username: updated.username,
+          has_password: !!updated.password_encrypted,
+          notes: updated.notes,
+          created_at: updated.created_at,
+          updated_at: updated.updated_at,
+        }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleDeleteCredential(id: string, res: http.ServerResponse): void {
+    const existing = getCredentialById(id);
+    if (!existing) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Credential not found' }));
+      return;
+    }
+    deleteCredential(id);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
   }

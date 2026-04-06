@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { AuthService } from './auth.service';
 import {
   StatusData, GroupDetail, TaskDetail, TaskRunLog,
-  SessionInfo, ChatSummary, MessageItem, Personality,
+  SessionInfo, ChatSummary, MessageItem, Personality, CredentialItem,
 } from '../shared/types';
 
 @Injectable({ providedIn: 'root' })
@@ -87,6 +87,16 @@ export class ApiService {
   createPersonality(data: { name: string; instructions?: string }): Promise<Personality> { return this.request('POST', '/api/personalities', data); }
   updatePersonality(id: string, data: { name?: string; instructions?: string }): Promise<Personality> { return this.request('PATCH', `/api/personalities/${encodeURIComponent(id)}`, data); }
   deletePersonality(id: string): Promise<void> { return this.request('DELETE', `/api/personalities/${encodeURIComponent(id)}`); }
+
+  // Credentials
+  getCredentials(): Promise<CredentialItem[]> { return this.request('GET', '/api/credentials'); }
+  createCredential(data: { name: string; website?: string; username?: string; password?: string; notes?: string }): Promise<CredentialItem> {
+    return this.request('POST', '/api/credentials', data);
+  }
+  updateCredential(id: string, data: { name?: string; website?: string; username?: string; password?: string; notes?: string }): Promise<CredentialItem> {
+    return this.request('PATCH', `/api/credentials/${encodeURIComponent(id)}`, data);
+  }
+  deleteCredential(id: string): Promise<void> { return this.request('DELETE', `/api/credentials/${encodeURIComponent(id)}`); }
 
   // Logs
   getLogs(type: 'all' | 'error' = 'all', lines = 80): Promise<{ lines: string[] }> {
