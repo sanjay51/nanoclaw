@@ -558,6 +558,9 @@ async function runQuery(
             NANOCLAW_CHAT_JID: containerInput.chatJid,
             NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            ...(process.env.NANOCLAW_CREDENTIALS_URL
+              ? { NANOCLAW_CREDENTIALS_URL: process.env.NANOCLAW_CREDENTIALS_URL }
+              : {}),
           },
         },
         ...(process.env.CHROME_MCP_URL

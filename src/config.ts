@@ -12,6 +12,7 @@ const envConfig = readEnvFile([
   'ONECLI_URL',
   'TZ',
   'WEB_HOST',
+  'WEB_PORT',
 ]);
 
 export const API_TOKEN = process.env.API_TOKEN || envConfig.API_TOKEN || '';
@@ -22,6 +23,10 @@ export const ASSISTANT_HAS_OWN_NUMBER =
     envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
 export const WEB_HOST =
   process.env.WEB_HOST || envConfig.WEB_HOST || '127.0.0.1';
+export const WEB_PORT = parseInt(
+  process.env.WEB_PORT || envConfig.WEB_PORT || '0',
+  10,
+);
 export const POLL_INTERVAL = 2000;
 export const SCHEDULER_POLL_INTERVAL = 60000;
 

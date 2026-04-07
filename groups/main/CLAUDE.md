@@ -73,6 +73,17 @@ Standard Markdown: `**bold**`, `*italic*`, `[links](url)`, `# headings`.
 
 ---
 
+## Credentials
+
+The user stores website and service credentials through the web dashboard. Use `mcp__nanoclaw__get_credentials` to access them:
+
+- Call with no arguments to list all stored credential names
+- Call with a name to get the full details (username, password, URL, notes)
+
+**Always check credentials first** when you need to log into a website, use an API, or authenticate with any service. Don't ask the user for credentials if they might already be stored — check first.
+
+---
+
 ## Admin Context
 
 This is the **main channel**, which has elevated privileges.

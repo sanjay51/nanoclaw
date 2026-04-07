@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  scryptSync,
+} from 'crypto';
 import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
@@ -866,7 +871,10 @@ export function encryptPassword(plaintext: string): string {
   const key = getEncryptionKey();
   const iv = randomBytes(16);
   const cipher = createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const encrypted = Buffer.concat([
+    cipher.update(plaintext, 'utf8'),
+    cipher.final(),
+  ]);
   const authTag = cipher.getAuthTag();
   // Store as iv:authTag:encrypted (all hex)
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
@@ -890,36 +898,71 @@ export function createCredential(c: Credential): void {
   db.prepare(
     `INSERT INTO credentials (id, name, website, username, password_encrypted, notes, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(c.id, c.name, c.website, c.username, c.password_encrypted, c.notes, c.created_at, c.updated_at);
+  ).run(
+    c.id,
+    c.name,
+    c.website,
+    c.username,
+    c.password_encrypted,
+    c.notes,
+    c.created_at,
+    c.updated_at,
+  );
 }
 
 export function getCredentialById(id: string): Credential | undefined {
-  return db.prepare('SELECT * FROM credentials WHERE id = ?').get(id) as Credential | undefined;
+  return db.prepare('SELECT * FROM credentials WHERE id = ?').get(id) as
+    | Credential
+    | undefined;
 }
 
 export function getAllCredentials(): Credential[] {
-  return db.prepare('SELECT * FROM credentials ORDER BY name').all() as Credential[];
+  return db
+    .prepare('SELECT * FROM credentials ORDER BY name')
+    .all() as Credential[];
 }
 
 export function updateCredential(
   id: string,
-  updates: Partial<Pick<Credential, 'name' | 'website' | 'username' | 'password_encrypted' | 'notes'>>,
+  updates: Partial<
+    Pick<
+      Credential,
+      'name' | 'website' | 'username' | 'password_encrypted' | 'notes'
+    >
+  >,
 ): void {
   const fields: string[] = [];
   const values: unknown[] = [];
 
-  if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name); }
-  if (updates.website !== undefined) { fields.push('website = ?'); values.push(updates.website); }
-  if (updates.username !== undefined) { fields.push('username = ?'); values.push(updates.username); }
-  if (updates.password_encrypted !== undefined) { fields.push('password_encrypted = ?'); values.push(updates.password_encrypted); }
-  if (updates.notes !== undefined) { fields.push('notes = ?'); values.push(updates.notes); }
+  if (updates.name !== undefined) {
+    fields.push('name = ?');
+    values.push(updates.name);
+  }
+  if (updates.website !== undefined) {
+    fields.push('website = ?');
+    values.push(updates.website);
+  }
+  if (updates.username !== undefined) {
+    fields.push('username = ?');
+    values.push(updates.username);
+  }
+  if (updates.password_encrypted !== undefined) {
+    fields.push('password_encrypted = ?');
+    values.push(updates.password_encrypted);
+  }
+  if (updates.notes !== undefined) {
+    fields.push('notes = ?');
+    values.push(updates.notes);
+  }
 
   if (fields.length === 0) return;
 
   fields.push('updated_at = ?');
   values.push(new Date().toISOString());
   values.push(id);
-  db.prepare(`UPDATE credentials SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  db.prepare(`UPDATE credentials SET ${fields.join(', ')} WHERE id = ?`).run(
+    ...values,
+  );
 }
 
 export function deleteCredential(id: string): void {

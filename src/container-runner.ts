@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  API_TOKEN,
   CHROME_MCP_PORT,
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
@@ -16,6 +17,7 @@ import {
   IDLE_TIMEOUT,
   ONECLI_URL,
   TIMEZONE,
+  WEB_PORT,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
@@ -27,7 +29,7 @@ import {
 } from './container-runtime.js';
 import { OneCLI } from '@onecli-sh/sdk';
 import { validateAdditionalMounts } from './mount-security.js';
-import { Credential, RegisteredGroup } from './types.js';
+import { RegisteredGroup } from './types.js';
 
 const onecli = new OneCLI({ url: ONECLI_URL });
 
@@ -248,6 +250,16 @@ async function buildContainerArgs(
     '-e',
     `CHROME_MCP_URL=http://host.docker.internal:${CHROME_MCP_PORT}/mcp`,
   );
+
+  // Credentials API URL — container fetches decrypted credentials on demand
+  // rather than reading a stale snapshot file.
+  if (WEB_PORT) {
+    const tokenParam = API_TOKEN ? `?token=${encodeURIComponent(API_TOKEN)}` : '';
+    args.push(
+      '-e',
+      `NANOCLAW_CREDENTIALS_URL=http://host.docker.internal:${WEB_PORT}/api/internal/credentials${tokenParam}`,
+    );
+  }
 
   // Bypass proxy for host-local services (Chrome MCP, etc.)
   args.push('-e', 'NO_PROXY=host.docker.internal,localhost,127.0.0.1');
@@ -755,34 +767,3 @@ export function writeGroupsSnapshot(
   );
 }
 
-/**
- * Write decrypted credentials to the IPC directory for the container agent to read.
- * Only written for the main group — non-main groups get no credentials file.
- */
-export function writeCredentialsSnapshot(
-  groupFolder: string,
-  isMain: boolean,
-  credentials: Credential[],
-  decryptFn: (encrypted: string) => string,
-): void {
-  const groupIpcDir = resolveGroupIpcPath(groupFolder);
-  fs.mkdirSync(groupIpcDir, { recursive: true });
-
-  const credentialsFile = path.join(groupIpcDir, 'credentials.json');
-
-  if (!isMain) {
-    // Non-main groups don't get credentials
-    if (fs.existsSync(credentialsFile)) fs.unlinkSync(credentialsFile);
-    return;
-  }
-
-  const decrypted = credentials.map((c) => ({
-    name: c.name,
-    website: c.website,
-    username: c.username,
-    password: c.password_encrypted ? decryptFn(c.password_encrypted) : '',
-    notes: c.notes,
-  }));
-
-  fs.writeFileSync(credentialsFile, JSON.stringify(decrypted, null, 2));
-}

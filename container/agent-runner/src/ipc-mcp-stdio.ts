@@ -608,7 +608,8 @@ server.tool(
   'get_credentials',
   `Retrieve stored credentials by name. The user manages credentials through the web dashboard.
 Use this when the user asks you to log into a website, use an API, or when you need authentication details.
-Search by name (case-insensitive partial match) or leave empty to list all credential names (without secrets).`,
+Search by name (case-insensitive partial match) or leave empty to list all credential names (without secrets).
+Credentials are always fetched fresh — if the user says they updated a credential, just call this tool again.`,
   {
     name: z.string().optional().describe('Name to search for (partial match). Omit to list all credential names.'),
   },
@@ -620,20 +621,38 @@ Search by name (case-insensitive partial match) or leave empty to list all crede
       };
     }
 
-    const credentialsFile = path.join(IPC_DIR, 'credentials.json');
-
-    if (!fs.existsSync(credentialsFile)) {
+    const credentialsUrl = process.env.NANOCLAW_CREDENTIALS_URL;
+    if (!credentialsUrl) {
       return {
-        content: [{ type: 'text' as const, text: 'No credentials available. Ask the user to add them via the web dashboard.' }],
+        content: [{ type: 'text' as const, text: 'Credentials API not configured. Ask the user to check their WEB_PORT setting.' }],
+        isError: true,
       };
     }
 
     try {
-      const allCredentials = JSON.parse(fs.readFileSync(credentialsFile, 'utf-8')) as Array<{
+      // Fetch fresh from host API — never uses cached/snapshot data
+      const url = new URL(credentialsUrl);
+      if (args.name) {
+        url.searchParams.set('name', args.name);
+      }
+      const resp = await fetch(url.toString());
+      if (!resp.ok) {
+        return {
+          content: [{ type: 'text' as const, text: `Failed to fetch credentials: ${resp.status} ${resp.statusText}` }],
+          isError: true,
+        };
+      }
+
+      const allCredentials = await resp.json() as Array<{
         name: string; website: string; username: string; password: string; notes: string;
       }>;
 
       if (allCredentials.length === 0) {
+        if (args.name) {
+          return {
+            content: [{ type: 'text' as const, text: `No credentials found matching "${args.name}".` }],
+          };
+        }
         return {
           content: [{ type: 'text' as const, text: 'No credentials stored. Ask the user to add them via the web dashboard.' }],
         };
@@ -650,16 +669,7 @@ Search by name (case-insensitive partial match) or leave empty to list all crede
       }
 
       // Search mode — return matching credentials with passwords
-      const query = args.name.toLowerCase();
-      const matches = allCredentials.filter(c => c.name.toLowerCase().includes(query));
-
-      if (matches.length === 0) {
-        return {
-          content: [{ type: 'text' as const, text: `No credentials found matching "${args.name}".` }],
-        };
-      }
-
-      const results = matches.map(c =>
+      const results = allCredentials.map(c =>
         `Name: ${c.name}\nWebsite: ${c.website || '(none)'}\nUsername: ${c.username || '(none)'}\nPassword: ${c.password || '(not set)'}\nNotes: ${c.notes || '(none)'}`
       );
 
@@ -668,7 +678,7 @@ Search by name (case-insensitive partial match) or leave empty to list all crede
       };
     } catch (err) {
       return {
-        content: [{ type: 'text' as const, text: `Error reading credentials: ${err instanceof Error ? err.message : String(err)}` }],
+        content: [{ type: 'text' as const, text: `Error fetching credentials: ${err instanceof Error ? err.message : String(err)}` }],
         isError: true,
       };
     }

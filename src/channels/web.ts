@@ -213,9 +213,7 @@ export class WebChannel implements Channel {
     const personalityMatch = url.pathname.match(
       /^\/api\/personalities\/([^/]+)$/,
     );
-    const credentialMatch = url.pathname.match(
-      /^\/api\/credentials\/([^/]+)$/,
-    );
+    const credentialMatch = url.pathname.match(/^\/api\/credentials\/([^/]+)$/);
 
     if (url.pathname === '/' && req.method === 'GET') {
       this.serveUI(res);
@@ -279,6 +277,11 @@ export class WebChannel implements Channel {
       this.handleUpdateCredential(credentialMatch[1], req, res);
     } else if (credentialMatch && req.method === 'DELETE') {
       this.handleDeleteCredential(credentialMatch[1], res);
+    } else if (
+      url.pathname === '/api/internal/credentials' &&
+      req.method === 'GET'
+    ) {
+      this.handleInternalGetCredentials(url, res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -991,6 +994,36 @@ export class WebChannel implements Channel {
 
   // --- Credential handlers ---
 
+  /**
+   * Internal endpoint for containers to fetch decrypted credentials on demand.
+   * Supports optional ?name= partial match filter. Always returns fresh data
+   * from the database — no caching or snapshot files.
+   */
+  private handleInternalGetCredentials(
+    url: URL,
+    res: http.ServerResponse,
+  ): void {
+    const allCredentials = getAllCredentials();
+    const nameFilter = url.searchParams.get('name');
+
+    const filtered = nameFilter
+      ? allCredentials.filter((c) =>
+          c.name.toLowerCase().includes(nameFilter.toLowerCase()),
+        )
+      : allCredentials;
+
+    const decrypted = filtered.map((c) => ({
+      name: c.name,
+      website: c.website,
+      username: c.username,
+      password: c.password_encrypted ? decryptPassword(c.password_encrypted) : '',
+      notes: c.notes,
+    }));
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(decrypted));
+  }
+
   private handleGetCredentials(res: http.ServerResponse): void {
     const credentials = getAllCredentials().map((c) => ({
       id: c.id,
@@ -1026,23 +1059,27 @@ export class WebChannel implements Channel {
           name: data.name,
           website: data.website || '',
           username: data.username || '',
-          password_encrypted: data.password ? encryptPassword(data.password) : '',
+          password_encrypted: data.password
+            ? encryptPassword(data.password)
+            : '',
           notes: data.notes || '',
           created_at: now,
           updated_at: now,
         };
         createCredential(credential);
         res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          id: credential.id,
-          name: credential.name,
-          website: credential.website,
-          username: credential.username,
-          has_password: !!credential.password_encrypted,
-          notes: credential.notes,
-          created_at: credential.created_at,
-          updated_at: credential.updated_at,
-        }));
+        res.end(
+          JSON.stringify({
+            id: credential.id,
+            name: credential.name,
+            website: credential.website,
+            username: credential.username,
+            has_password: !!credential.password_encrypted,
+            notes: credential.notes,
+            created_at: credential.created_at,
+            updated_at: credential.updated_at,
+          }),
+        );
       } catch {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
@@ -1070,7 +1107,8 @@ export class WebChannel implements Channel {
         if (typeof data.name === 'string') updates.name = data.name;
         if (typeof data.website === 'string') updates.website = data.website;
         if (typeof data.username === 'string') updates.username = data.username;
-        if (typeof data.password === 'string') updates.password_encrypted = encryptPassword(data.password);
+        if (typeof data.password === 'string')
+          updates.password_encrypted = encryptPassword(data.password);
         if (typeof data.notes === 'string') updates.notes = data.notes;
         if (Object.keys(updates).length === 0) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1080,16 +1118,18 @@ export class WebChannel implements Channel {
         updateCredential(id, updates);
         const updated = getCredentialById(id)!;
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          id: updated.id,
-          name: updated.name,
-          website: updated.website,
-          username: updated.username,
-          has_password: !!updated.password_encrypted,
-          notes: updated.notes,
-          created_at: updated.created_at,
-          updated_at: updated.updated_at,
-        }));
+        res.end(
+          JSON.stringify({
+            id: updated.id,
+            name: updated.name,
+            website: updated.website,
+            username: updated.username,
+            has_password: !!updated.password_encrypted,
+            notes: updated.notes,
+            created_at: updated.created_at,
+            updated_at: updated.updated_at,
+          }),
+        );
       } catch {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid JSON' }));

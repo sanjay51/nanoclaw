@@ -26,7 +26,6 @@ import {
 import {
   ContainerOutput,
   runContainerAgent,
-  writeCredentialsSnapshot,
   writeGroupsSnapshot,
   writeTasksSnapshot,
 } from './container-runner.js';
@@ -35,9 +34,7 @@ import {
   ensureContainerRuntimeRunning,
 } from './container-runtime.js';
 import {
-  decryptPassword,
   getAllChats,
-  getAllCredentials,
   getAllRegisteredGroups,
   getAllSessions,
   getSession,
@@ -414,14 +411,6 @@ async function runAgent(
     isMain,
     availableGroups,
     new Set(Object.keys(registeredGroups)),
-  );
-
-  // Write credentials snapshot (main group only)
-  writeCredentialsSnapshot(
-    group.folder,
-    isMain,
-    getAllCredentials(),
-    decryptPassword,
   );
 
   // Wrap onOutput to track session ID from streamed results
