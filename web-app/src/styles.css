@@ -57,6 +57,85 @@ body {
 
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: #ccc; }
 
+/* Editor.js light theme */
+[data-theme="light"] .editorjs-wrapper {
+  background: #ffffff !important;
+  border-color: #e0e0e0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-paragraph,
+[data-theme="light"] .editorjs-wrapper .ce-header,
+[data-theme="light"] .editorjs-wrapper .ce-code,
+[data-theme="light"] .editorjs-wrapper .ce-quote,
+[data-theme="light"] .editorjs-wrapper .cdx-list {
+  color: #1a1a1a !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-code__textarea {
+  background: #f5f5f5 !important;
+  border-color: #e0e0e0 !important;
+  color: #333 !important;
+}
+[data-theme="light"] .editorjs-wrapper .cdx-quote__text {
+  color: #555 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-toolbar__plus:hover,
+[data-theme="light"] .editorjs-wrapper .ce-toolbar__settings-btn:hover {
+  color: #333 !important;
+  background: #f0f0f0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-popover {
+  background: #fff !important;
+  border-color: #e0e0e0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-popover-item:hover {
+  background: #f0f0f0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-popover-item__title {
+  color: #333 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-popover-item__icon {
+  color: #555 !important;
+  background: #f0f0f0 !important;
+  border-color: #e0e0e0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-inline-toolbar {
+  background: #fff !important;
+  border-color: #e0e0e0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-inline-toolbar__dropdown {
+  border-right-color: #e0e0e0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-inline-tool {
+  color: #555 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-inline-tool:hover {
+  background: #f0f0f0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .inline-code {
+  background: #f0f0f0 !important;
+  color: #d946ef !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-conversion-toolbar {
+  background: #fff !important;
+  border-color: #e0e0e0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-conversion-tool:hover {
+  background: #f0f0f0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-conversion-tool__icon {
+  color: #555 !important;
+  background: #f0f0f0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .cdx-settings-button {
+  color: #555 !important;
+}
+[data-theme="light"] .editorjs-wrapper .cdx-settings-button:hover {
+  background: #f0f0f0 !important;
+}
+[data-theme="light"] .editorjs-wrapper .ce-delimiter,
+[data-theme="light"] .editorjs-wrapper .cdx-delimiter {
+  background: #e0e0e0 !important;
+}
+
 /* Routed components must fill their parent flex container */
 router-outlet + * {
   flex: 1;
