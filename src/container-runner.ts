@@ -254,7 +254,9 @@ async function buildContainerArgs(
   // Credentials API URL — container fetches decrypted credentials on demand
   // rather than reading a stale snapshot file.
   if (WEB_PORT) {
-    const tokenParam = API_TOKEN ? `?token=${encodeURIComponent(API_TOKEN)}` : '';
+    const tokenParam = API_TOKEN
+      ? `?token=${encodeURIComponent(API_TOKEN)}`
+      : '';
     args.push(
       '-e',
       `NANOCLAW_CREDENTIALS_URL=http://host.docker.internal:${WEB_PORT}/api/internal/credentials${tokenParam}`,
@@ -766,4 +768,3 @@ export function writeGroupsSnapshot(
     ),
   );
 }
-

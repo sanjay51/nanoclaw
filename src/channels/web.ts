@@ -1016,7 +1016,9 @@ export class WebChannel implements Channel {
       name: c.name,
       website: c.website,
       username: c.username,
-      password: c.password_encrypted ? decryptPassword(c.password_encrypted) : '',
+      password: c.password_encrypted
+        ? decryptPassword(c.password_encrypted)
+        : '',
       notes: c.notes,
     }));
 
