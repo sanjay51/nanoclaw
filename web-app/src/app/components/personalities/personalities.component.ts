@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, OnDestroy, signal, ElementRef, ViewChild, AfterViewInit, ChangeDetectorRef } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy, signal, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { ToastService } from '../../services/toast.service';
@@ -11,6 +11,13 @@ import Quote from '@editorjs/quote';
 import Delimiter from '@editorjs/delimiter';
 import Marker from '@editorjs/marker';
 import InlineCode from '@editorjs/inline-code';
+
+interface Section {
+  id: string;
+  name: string;
+  content: string;
+  children: Section[];
+}
 
 @Component({
   selector: 'app-personalities',
@@ -25,6 +32,10 @@ import InlineCode from '@editorjs/inline-code';
           </button>
         }
         <h2 class="text-lg font-semibold">{{ editing() ? (editId ? 'Edit Personality' : 'New Personality') : 'Personalities' }}</h2>
+        @if (editing()) {
+          <span class="text-zinc-500 text-sm">—</span>
+          <input [(ngModel)]="editName" placeholder="Personality name" class="px-2 py-1 rounded border border-border bg-zinc-950 text-sm outline-none focus:border-accent w-48">
+        }
       </div>
       <div class="flex gap-2">
         @if (editing()) {
@@ -37,19 +48,89 @@ import InlineCode from '@editorjs/inline-code';
     </div>
 
     @if (editing()) {
-      <div class="flex-1 overflow-y-auto">
-        <div class="p-6 max-w-5xl mx-auto">
-          <div class="mb-5">
-            <label class="block text-xs font-medium text-zinc-500 mb-1.5">Name</label>
-            <input [(ngModel)]="editName" placeholder="e.g. Friendly Helper" class="w-full max-w-md px-3 py-2 rounded border border-border bg-zinc-950 text-sm outline-none focus:border-accent">
+      <div class="flex flex-1 min-h-0">
+        <!-- Section sidebar -->
+        <div class="w-52 border-r border-border bg-surface flex flex-col shrink-0">
+          <div class="flex-1 overflow-y-auto py-2">
+            @for (section of sections; track section.id) {
+              <div class="section-item" [class.active]="activeSection?.id === section.id">
+                <div class="flex items-center group" (click)="selectSection(section)">
+                  @if (section.children.length > 0) {
+                    <button (click)="toggleCollapse($event, section)" class="p-0.5 text-zinc-500 hover:text-zinc-300 shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" [style.transform]="isCollapsed(section) ? '' : 'rotate(90deg)'" style="transition: transform 0.15s"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
+                  } @else {
+                    <span class="w-4 shrink-0"></span>
+                  }
+                  @if (renamingId === section.id) {
+                    <input #renameInput [(ngModel)]="renameValue" (blur)="finishRename(section)" (keydown.enter)="finishRename(section)" (keydown.escape)="cancelRename()" class="flex-1 px-1.5 py-1 text-xs bg-zinc-950 border border-accent rounded outline-none min-w-0" (click)="$event.stopPropagation()">
+                  } @else {
+                    <span class="flex-1 px-1.5 py-1 text-xs truncate cursor-pointer">{{ section.name }}</span>
+                  }
+                  <div class="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 pr-1">
+                    <button (click)="addSubsection($event, section)" class="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800" title="Add subsection">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                    </button>
+                    <button (click)="startRename($event, section)" class="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800" title="Rename">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+                    </button>
+                    @if (sections.length > 1) {
+                      <button (click)="removeSection($event, section)" class="p-0.5 rounded text-zinc-500 hover:text-red-400 hover:bg-zinc-800" title="Delete">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                      </button>
+                    }
+                  </div>
+                </div>
+                <!-- Subsections -->
+                @if (!isCollapsed(section) && section.children.length > 0) {
+                  @for (child of section.children; track child.id) {
+                    <div class="section-item sub" [class.active]="activeSection?.id === child.id">
+                      <div class="flex items-center group pl-4" (click)="selectSection(child)">
+                        <span class="w-1.5 h-1.5 rounded-full bg-zinc-600 shrink-0 mr-1.5"></span>
+                        @if (renamingId === child.id) {
+                          <input #renameInput [(ngModel)]="renameValue" (blur)="finishRename(child)" (keydown.enter)="finishRename(child)" (keydown.escape)="cancelRename()" class="flex-1 px-1.5 py-1 text-xs bg-zinc-950 border border-accent rounded outline-none min-w-0" (click)="$event.stopPropagation()">
+                        } @else {
+                          <span class="flex-1 px-1 py-1 text-xs truncate cursor-pointer text-zinc-400">{{ child.name }}</span>
+                        }
+                        <div class="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 pr-1">
+                          <button (click)="startRename($event, child)" class="p-0.5 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800" title="Rename">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+                          </button>
+                          <button (click)="removeSection($event, child, section)" class="p-0.5 rounded text-zinc-500 hover:text-red-400 hover:bg-zinc-800" title="Delete">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  }
+                }
+              </div>
+            }
           </div>
-          <div>
-            <label class="block text-xs font-medium text-zinc-500 mb-1.5">Instructions</label>
-            <div class="editorjs-wrapper border border-border rounded-lg bg-zinc-950 min-h-[400px]">
-              <div #editorContainer id="editorjs"></div>
+          <div class="p-2 border-t border-border">
+            <button (click)="addSection()" class="w-full px-2 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 flex items-center gap-1.5 justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              Add section
+            </button>
+          </div>
+        </div>
+
+        <!-- Editor area -->
+        <div class="flex-1 flex flex-col min-w-0">
+          @if (activeSection) {
+            <div class="px-5 py-3 border-b border-border bg-surface flex items-center gap-2">
+              <span class="text-xs text-zinc-500">{{ getActiveSectionPath() }}</span>
             </div>
-            <p class="text-xs text-zinc-600 mt-2">Use headings, lists, quotes, and code blocks to structure your personality instructions.</p>
-          </div>
+            <div class="flex-1 overflow-y-auto">
+              <div class="editorjs-wrapper">
+                <div #editorContainer id="editorjs"></div>
+              </div>
+            </div>
+          } @else {
+            <div class="flex-1 flex items-center justify-center text-zinc-500 text-sm">
+              Select a section to edit
+            </div>
+          }
         </div>
       </div>
     } @else {
@@ -63,7 +144,7 @@ import InlineCode from '@editorjs/inline-code';
                 <div class="flex items-start justify-between gap-3">
                   <div class="flex-1 min-w-0">
                     <h4 class="font-medium text-sm">{{ p.name }}</h4>
-                    <p class="text-xs text-zinc-500 mt-1 line-clamp-3 whitespace-pre-wrap">{{ p.instructions || 'No instructions set' }}</p>
+                    <p class="text-xs text-zinc-500 mt-1 line-clamp-3 whitespace-pre-wrap">{{ getSectionSummary(p.instructions) }}</p>
                   </div>
                   <button (click)="remove($event, p)" class="px-2 py-1 rounded border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">Delete</button>
                 </div>
@@ -75,8 +156,24 @@ import InlineCode from '@editorjs/inline-code';
     }
   `,
   styles: [`
+    .section-item > div {
+      padding: 2px 4px;
+      margin: 0 4px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .section-item > div:hover {
+      background: rgba(255,255,255,0.05);
+    }
+    .section-item.active > div {
+      background: rgba(59, 130, 246, 0.15);
+    }
+    .section-item.active > div span:not(.w-1\.5) {
+      color: #93c5fd;
+    }
     :host ::ng-deep .editorjs-wrapper {
       padding: 16px 24px;
+      min-height: 100%;
     }
     :host ::ng-deep .editorjs-wrapper .ce-block__content {
       max-width: 100%;
@@ -217,9 +314,15 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
   editing = signal(false);
   editId = '';
   editName = '';
-  editInstructions = '';
+
+  sections: Section[] = [];
+  activeSection: Section | null = null;
+  collapsedIds = new Set<string>();
+  renamingId: string | null = null;
+  renameValue = '';
 
   private editor: EditorJS | null = null;
+  private idCounter = 0;
 
   async ngOnInit(): Promise<void> {
     await this.load();
@@ -240,23 +343,32 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
   startCreate(): void {
     this.editId = '';
     this.editName = '';
-    this.editInstructions = '';
+    this.sections = [
+      this.makeSection('Identity'),
+      this.makeSection('Skills'),
+      this.makeSection('Behavior'),
+    ];
     this.editing.set(true);
     this.cdr.detectChanges();
-    this.initEditor('');
+    this.selectSection(this.sections[0]);
   }
 
   startEdit(p: Personality): void {
     this.editId = p.id;
     this.editName = p.name;
-    this.editInstructions = p.instructions;
+    this.sections = this.markdownToSections(p.instructions);
+    if (this.sections.length === 0) {
+      this.sections = [this.makeSection('Identity')];
+    }
     this.editing.set(true);
     this.cdr.detectChanges();
-    this.initEditor(p.instructions);
+    this.selectSection(this.sections[0]);
   }
 
   cancelEdit(): void {
     this.destroyEditor();
+    this.activeSection = null;
+    this.sections = [];
     this.editing.set(false);
   }
 
@@ -265,7 +377,8 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
       this.toast.show('Name is required', true);
       return;
     }
-    const markdown = await this.getMarkdown();
+    await this.saveCurrentSectionContent();
+    const markdown = this.sectionsToMarkdown(this.sections);
     try {
       if (this.editId) {
         await this.api.updatePersonality(this.editId, {
@@ -281,6 +394,8 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
         this.toast.show('Personality created');
       }
       this.destroyEditor();
+      this.activeSection = null;
+      this.sections = [];
       this.editing.set(false);
       await this.load();
     } catch (e: any) {
@@ -300,12 +415,99 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
     }
   }
 
+  async selectSection(section: Section): Promise<void> {
+    if (this.activeSection?.id === section.id) return;
+    await this.saveCurrentSectionContent();
+    this.activeSection = section;
+    this.cdr.detectChanges();
+    this.initEditor(section.content);
+  }
+
+  addSection(): void {
+    const section = this.makeSection('New Section');
+    this.sections.push(section);
+    this.selectSection(section);
+  }
+
+  addSubsection(event: Event, parent: Section): void {
+    event.stopPropagation();
+    const child = this.makeSection('New Subsection');
+    parent.children.push(child);
+    this.collapsedIds.delete(parent.id);
+    this.selectSection(child);
+  }
+
+  async removeSection(event: Event, section: Section, parent?: Section): Promise<void> {
+    event.stopPropagation();
+    const list = parent ? parent.children : this.sections;
+    const idx = list.indexOf(section);
+    if (idx === -1) return;
+    list.splice(idx, 1);
+    if (this.activeSection?.id === section.id) {
+      this.destroyEditor();
+      this.activeSection = null;
+      // Select next available
+      const next = parent?.children[0] || this.sections[0];
+      if (next) this.selectSection(next);
+    }
+  }
+
+  toggleCollapse(event: Event, section: Section): void {
+    event.stopPropagation();
+    if (this.collapsedIds.has(section.id)) {
+      this.collapsedIds.delete(section.id);
+    } else {
+      this.collapsedIds.add(section.id);
+    }
+  }
+
+  isCollapsed(section: Section): boolean {
+    return this.collapsedIds.has(section.id);
+  }
+
+  startRename(event: Event, section: Section): void {
+    event.stopPropagation();
+    this.renamingId = section.id;
+    this.renameValue = section.name;
+    this.cdr.detectChanges();
+  }
+
+  finishRename(section: Section): void {
+    if (this.renameValue.trim()) {
+      section.name = this.renameValue.trim();
+    }
+    this.renamingId = null;
+  }
+
+  cancelRename(): void {
+    this.renamingId = null;
+  }
+
+  getActiveSectionPath(): string {
+    if (!this.activeSection) return '';
+    for (const s of this.sections) {
+      if (s.id === this.activeSection.id) return s.name;
+      for (const c of s.children) {
+        if (c.id === this.activeSection.id) return `${s.name} / ${c.name}`;
+      }
+    }
+    return this.activeSection.name;
+  }
+
+  getSectionSummary(instructions: string): string {
+    if (!instructions) return 'No instructions set';
+    const sections = this.markdownToSections(instructions);
+    return sections.map(s => s.name).join(', ') || 'No instructions set';
+  }
+
+  // --- Editor helpers ---
+
   private initEditor(markdown: string): void {
     this.destroyEditor();
     const data = this.markdownToEditorData(markdown);
     this.editor = new EditorJS({
       holder: 'editorjs',
-      placeholder: 'Start writing personality instructions...',
+      placeholder: 'Write instructions for this section...',
       data,
       tools: {
         header: {
@@ -329,13 +531,90 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
     }
   }
 
-  private async getMarkdown(): Promise<string> {
-    if (!this.editor) return this.editInstructions;
-    const data = await this.editor.save();
-    return this.editorDataToMarkdown(data);
+  private async saveCurrentSectionContent(): Promise<void> {
+    if (!this.activeSection || !this.editor) return;
+    try {
+      const data = await this.editor.save();
+      this.activeSection.content = this.editorDataToMarkdown(data);
+    } catch {
+      // editor may already be destroyed
+    }
   }
 
-  // Convert Editor.js output data to markdown string
+  private makeSection(name: string): Section {
+    return { id: `s${++this.idCounter}`, name, content: '', children: [] };
+  }
+
+  // --- Markdown <-> Sections ---
+
+  private markdownToSections(markdown: string): Section[] {
+    if (!markdown || !markdown.trim()) return [];
+    const sections: Section[] = [];
+    const lines = markdown.split('\n');
+    let currentSection: Section | null = null;
+    let currentChild: Section | null = null;
+    let contentLines: string[] = [];
+
+    const flushContent = () => {
+      const content = contentLines.join('\n').trim();
+      if (currentChild) {
+        currentChild.content = content;
+      } else if (currentSection) {
+        currentSection.content = content;
+      } else if (content) {
+        // Content before any heading goes into an Overview section
+        const overview = this.makeSection('Overview');
+        overview.content = content;
+        sections.push(overview);
+      }
+      contentLines = [];
+    };
+
+    for (const line of lines) {
+      const h2Match = line.match(/^##\s+(.+)/);
+      const h3Match = line.match(/^###\s+(.+)/);
+
+      if (h2Match) {
+        flushContent();
+        currentChild = null;
+        currentSection = this.makeSection(h2Match[1].trim());
+        sections.push(currentSection);
+      } else if (h3Match && currentSection) {
+        flushContent();
+        currentChild = this.makeSection(h3Match[1].trim());
+        currentSection.children.push(currentChild);
+      } else {
+        contentLines.push(line);
+      }
+    }
+    flushContent();
+
+    return sections;
+  }
+
+  private sectionsToMarkdown(sections: Section[]): string {
+    const parts: string[] = [];
+    for (const section of sections) {
+      parts.push(`## ${section.name}`);
+      if (section.content.trim()) {
+        parts.push('');
+        parts.push(section.content.trim());
+      }
+      for (const child of section.children) {
+        parts.push('');
+        parts.push(`### ${child.name}`);
+        if (child.content.trim()) {
+          parts.push('');
+          parts.push(child.content.trim());
+        }
+      }
+      parts.push('');
+    }
+    return parts.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  // --- Editor.js data conversion (unchanged) ---
+
   private editorDataToMarkdown(data: any): string {
     const lines: string[] = [];
     for (const block of data.blocks) {
@@ -392,7 +671,6 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
     const prefix = style === 'ordered' ? '1. ' : '- ';
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      // Editor.js list items can be strings or objects with content/items
       if (typeof item === 'string') {
         lines.push(indent + prefix + this.inlineToMarkdown(item));
       } else if (item.content !== undefined) {
@@ -404,7 +682,6 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
     }
   }
 
-  // Convert inline HTML (bold, italic, code, marker) to markdown
   private inlineToMarkdown(html: string): string {
     if (!html) return '';
     let md = html;
@@ -418,7 +695,7 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
     md = md.replace(/<mark>(.*?)<\/mark>/gi, '==$1==');
     md = md.replace(/<a href="(.*?)">(.*?)<\/a>/gi, '[$2]($1)');
     md = md.replace(/<br\s*\/?>/gi, '\n');
-    md = md.replace(/<\/?[^>]+(>|$)/g, ''); // strip remaining HTML tags
+    md = md.replace(/<\/?[^>]+(>|$)/g, '');
     md = md.replace(/&nbsp;/g, ' ');
     md = md.replace(/&amp;/g, '&');
     md = md.replace(/&lt;/g, '<');
@@ -426,7 +703,6 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
     return md;
   }
 
-  // Convert markdown string to Editor.js data format
   private markdownToEditorData(markdown: string): any {
     if (!markdown || !markdown.trim()) {
       return { time: Date.now(), blocks: [] };
@@ -439,20 +715,17 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
     while (i < lines.length) {
       const line = lines[i];
 
-      // Skip empty lines
       if (line.trim() === '') {
         i++;
         continue;
       }
 
-      // Delimiter
       if (/^---+\s*$/.test(line.trim()) || /^\*\*\*+\s*$/.test(line.trim())) {
         blocks.push({ type: 'delimiter', data: {} });
         i++;
         continue;
       }
 
-      // Header
       const headerMatch = line.match(/^(#{1,4})\s+(.+)/);
       if (headerMatch) {
         blocks.push({
@@ -463,7 +736,6 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
         continue;
       }
 
-      // Code block
       if (line.trim().startsWith('```')) {
         i++;
         const codeLines: string[] = [];
@@ -472,11 +744,10 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
           i++;
         }
         blocks.push({ type: 'code', data: { code: codeLines.join('\n') } });
-        i++; // skip closing ```
+        i++;
         continue;
       }
 
-      // Quote
       if (line.startsWith('> ') || line === '>') {
         const quoteLines: string[] = [];
         while (i < lines.length && (lines[i].startsWith('> ') || lines[i] === '>')) {
@@ -495,7 +766,6 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
         continue;
       }
 
-      // Unordered list
       if (/^\s*[-*+]\s+/.test(line)) {
         const items: string[] = [];
         while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
@@ -506,7 +776,6 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
         continue;
       }
 
-      // Ordered list
       if (/^\s*\d+[.)]\s+/.test(line)) {
         const items: string[] = [];
         while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
@@ -517,7 +786,6 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
         continue;
       }
 
-      // Paragraph (default)
       blocks.push({
         type: 'paragraph',
         data: { text: this.markdownInlineToHtml(line) },
@@ -528,25 +796,18 @@ export class PersonalitiesComponent implements OnInit, OnDestroy {
     return { time: Date.now(), blocks };
   }
 
-  // Convert markdown inline formatting to HTML for Editor.js
   private markdownInlineToHtml(text: string): string {
     if (!text) return '';
     let html = text;
-    // Escape HTML entities that aren't part of formatting
     html = html.replace(/&/g, '&amp;');
     html = html.replace(/</g, '&lt;');
     html = html.replace(/>/g, '&gt;');
-    // Inline code (before bold/italic to avoid conflicts)
     html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
-    // Bold
     html = html.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
     html = html.replace(/__(.+?)__/g, '<b>$1</b>');
-    // Italic
     html = html.replace(/\*(.+?)\*/g, '<i>$1</i>');
     html = html.replace(/_(.+?)_/g, '<i>$1</i>');
-    // Highlight
     html = html.replace(/==(.+?)==/g, '<mark class="cdx-marker">$1</mark>');
-    // Links
     html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
     return html;
   }
