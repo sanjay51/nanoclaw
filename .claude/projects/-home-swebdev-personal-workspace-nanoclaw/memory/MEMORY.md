@@ -1,0 +1,1 @@
+- [No credential snapshots](feedback_no_credential_snapshots.md) — always fetch credentials fresh from host API, never cache in container
