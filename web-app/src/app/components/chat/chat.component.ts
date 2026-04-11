@@ -42,6 +42,9 @@ export class ChatComponent implements OnInit, OnDestroy {
   chatJid = signal('');
   messages = signal<ChatMsg[]>([]);
   inputText = '';
+  private sentHistory: string[] = [];
+  private historyIndex = -1;
+  private draftText = '';
   pendingFiles: File[] = [];
   previewUrls = signal<string[]>([]);
   loading = signal(false);
@@ -152,6 +155,9 @@ export class ChatComponent implements OnInit, OnDestroy {
       if (msg) msg.imageUrls = this.previewUrls().slice();
     }
 
+    this.sentHistory.unshift(text);
+    this.historyIndex = -1;
+    this.draftText = '';
     this.inputText = '';
     this.resetTextarea();
 
@@ -171,6 +177,34 @@ export class ChatComponent implements OnInit, OnDestroy {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       this.send();
+      return;
+    }
+
+    // ArrowUp: cycle back through sent history (only when cursor is at start)
+    if (event.key === 'ArrowUp' && this.sentHistory.length > 0) {
+      const el = this.textInputEl?.nativeElement;
+      if (el && el.selectionStart === 0 && el.selectionEnd === 0) {
+        event.preventDefault();
+        if (this.historyIndex === -1) this.draftText = this.inputText;
+        if (this.historyIndex < this.sentHistory.length - 1) {
+          this.historyIndex++;
+          this.inputText = this.sentHistory[this.historyIndex];
+        }
+      }
+    }
+
+    // ArrowDown: cycle forward, back to draft
+    if (event.key === 'ArrowDown' && this.historyIndex >= 0) {
+      const el = this.textInputEl?.nativeElement;
+      const atEnd = el && el.selectionStart === el.value.length;
+      if (atEnd) {
+        event.preventDefault();
+        this.historyIndex--;
+        this.inputText =
+          this.historyIndex >= 0
+            ? this.sentHistory[this.historyIndex]
+            : this.draftText;
+      }
     }
   }
 

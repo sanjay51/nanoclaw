@@ -266,14 +266,18 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   if (lastContent.startsWith('/') && lastContent.length > 1) {
     const slug = lastContent.slice(1).split(/\s+/)[0];
     const normalise = (s: string) =>
-      s.toLowerCase().replace(/[\s_-]+/g, '-').trim();
+      s
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '-')
+        .trim();
     const target = normalise(slug);
     const allPersonalities = getAllPersonalities();
     const match = allPersonalities.find((p) => normalise(p.name) === target);
     if (match) {
       overridePersonalityId = match.id;
       // Strip the /<personality> prefix from the message content
-      lastMsg.content = lastContent.slice(1 + slug.length).trim() || lastContent;
+      lastMsg.content =
+        lastContent.slice(1 + slug.length).trim() || lastContent;
       logger.info(
         { chatJid, personality: match.name },
         'Personality override via /command',
@@ -587,7 +591,10 @@ async function startMessageLoop(): Promise<void> {
           if (pipeContent.startsWith('/') && pipeContent.length > 1) {
             const pipeSlug = pipeContent.slice(1).split(/\s+/)[0];
             const norm = (s: string) =>
-              s.toLowerCase().replace(/[\s_-]+/g, '-').trim();
+              s
+                .toLowerCase()
+                .replace(/[\s_-]+/g, '-')
+                .trim();
             const pipeTarget = norm(pipeSlug);
             const pipePersonalities = getAllPersonalities();
             const pipeMatch = pipePersonalities.find(
@@ -745,7 +752,6 @@ async function main(): Promise<void> {
         );
         return;
       }
-
 
       // Sender allowlist drop mode: discard messages from denied senders before storing
       if (!msg.is_from_me && !msg.is_bot_message && registeredGroups[chatJid]) {
