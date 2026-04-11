@@ -690,7 +690,10 @@ async function main(): Promise<void> {
 
     // Match by slug: lowercase, hyphens/spaces/underscores normalised
     const normalise = (s: string) =>
-      s.toLowerCase().replace(/[\s_-]+/g, '-').trim();
+      s
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '-')
+        .trim();
     const target = normalise(slug);
 
     const match = personalities.find((p) => normalise(p.name) === target);

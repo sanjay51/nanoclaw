@@ -282,6 +282,11 @@ export class WebChannel implements Channel {
       req.method === 'GET'
     ) {
       this.handleInternalGetCredentials(url, res);
+    } else if (
+      url.pathname === '/api/internal/personalities' &&
+      req.method === 'GET'
+    ) {
+      this.handleInternalGetPersonalities(res);
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Not found' }));
@@ -1024,6 +1029,16 @@ export class WebChannel implements Channel {
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(decrypted));
+  }
+
+  private handleInternalGetPersonalities(res: http.ServerResponse): void {
+    const personalities = getAllPersonalities().map((p) => ({
+      id: p.id,
+      name: p.name,
+      instructions: p.instructions,
+    }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(personalities));
   }
 
   private handleGetCredentials(res: http.ServerResponse): void {

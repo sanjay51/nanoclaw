@@ -685,6 +685,80 @@ Credentials are always fetched fresh — if the user says they updated a credent
   },
 );
 
+server.tool(
+  'list_personalities',
+  `List all available personalities. Returns each personality's id, name, and instructions.
+Use this to discover which personalities exist before switching, or to show the user their options.`,
+  {},
+  async () => {
+    const personalitiesUrl = process.env.NANOCLAW_PERSONALITIES_URL;
+    if (!personalitiesUrl) {
+      return {
+        content: [{ type: 'text' as const, text: 'Personalities API not configured.' }],
+        isError: true,
+      };
+    }
+
+    try {
+      const resp = await fetch(personalitiesUrl);
+      if (!resp.ok) {
+        return {
+          content: [{ type: 'text' as const, text: `Failed to fetch personalities: ${resp.status} ${resp.statusText}` }],
+          isError: true,
+        };
+      }
+
+      const personalities = await resp.json() as Array<{
+        id: string; name: string; instructions: string;
+      }>;
+
+      if (personalities.length === 0) {
+        return {
+          content: [{ type: 'text' as const, text: 'No personalities configured. The user can create them via the web dashboard.' }],
+        };
+      }
+
+      const list = personalities.map(p =>
+        `- **${p.name}** (id: ${p.id})\n  ${p.instructions.slice(0, 150)}${p.instructions.length > 150 ? '...' : ''}`
+      ).join('\n');
+
+      return {
+        content: [{ type: 'text' as const, text: `Available personalities:\n${list}` }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: 'text' as const, text: `Error fetching personalities: ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  'switch_personality',
+  `Switch this group's personality. The new personality's instructions will take effect on the next conversation turn.
+The current session will be cleared so the agent starts fresh with the new personality context.
+Use list_personalities first to find available personality IDs.`,
+  {
+    personality_id: z.string().describe('The personality ID to switch to. Use list_personalities to find available IDs.'),
+  },
+  async (args) => {
+    const data = {
+      type: 'switch_personality',
+      personalityId: args.personality_id,
+      chatJid,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    return {
+      content: [{ type: 'text' as const, text: `Personality switch requested (${args.personality_id}). It will take effect on the next conversation turn.` }],
+    };
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

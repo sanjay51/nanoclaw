@@ -261,6 +261,10 @@ async function buildContainerArgs(
       '-e',
       `NANOCLAW_CREDENTIALS_URL=http://host.docker.internal:${WEB_PORT}/api/internal/credentials${tokenParam}`,
     );
+    args.push(
+      '-e',
+      `NANOCLAW_PERSONALITIES_URL=http://host.docker.internal:${WEB_PORT}/api/internal/personalities${tokenParam}`,
+    );
   }
 
   // Bypass proxy for host-local services (Chrome MCP, etc.)

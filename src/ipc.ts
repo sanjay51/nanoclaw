@@ -5,7 +5,16 @@ import { CronExpressionParser } from 'cron-parser';
 
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import {
+  createTask,
+  deleteSession,
+  deleteTask,
+  getPersonalityById,
+  getRegisteredGroup,
+  getTaskById,
+  setRegisteredGroup,
+  updateTask,
+} from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { nudgeScheduler } from './task-scheduler.js';
@@ -174,6 +183,8 @@ export async function processTaskIpc(
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    // For switch_personality
+    personalityId?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -460,6 +471,54 @@ export async function processTaskIpc(
         logger.warn(
           { data },
           'Invalid register_group request - missing required fields',
+        );
+      }
+      break;
+
+    case 'switch_personality':
+      if (data.personalityId && data.chatJid) {
+        const personality = getPersonalityById(data.personalityId);
+        if (!personality) {
+          logger.warn(
+            { personalityId: data.personalityId, sourceGroup },
+            'Personality not found for switch',
+          );
+          break;
+        }
+
+        // Find the group by chatJid — verify the requesting group owns it
+        const targetGroup = registeredGroups[data.chatJid];
+        if (!targetGroup) {
+          logger.warn(
+            { chatJid: data.chatJid, sourceGroup },
+            'Group not found for personality switch',
+          );
+          break;
+        }
+        if (!isMain && targetGroup.folder !== sourceGroup) {
+          logger.warn(
+            { chatJid: data.chatJid, sourceGroup },
+            'Unauthorized personality switch attempt',
+          );
+          break;
+        }
+
+        const updated = { ...targetGroup, personalityId: data.personalityId };
+        setRegisteredGroup(data.chatJid, updated);
+        deleteSession(targetGroup.folder);
+
+        // Update in-memory state
+        const groups = deps.registeredGroups();
+        groups[data.chatJid] = updated;
+
+        logger.info(
+          {
+            chatJid: data.chatJid,
+            personality: personality.name,
+            personalityId: data.personalityId,
+            sourceGroup,
+          },
+          'Personality switched via IPC',
         );
       }
       break;
