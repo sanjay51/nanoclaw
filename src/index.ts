@@ -35,6 +35,7 @@ import {
 } from './container-runtime.js';
 import {
   getAllChats,
+  getAllPersonalities,
   getAllRegisteredGroups,
   getAllSessions,
   getSession,
@@ -676,6 +677,59 @@ async function main(): Promise<void> {
     }
   }
 
+  // Handle /<personality-name> commands — switch a group's personality
+  async function handlePersonalityCommand(
+    slug: string,
+    chatJid: string,
+  ): Promise<boolean> {
+    const group = registeredGroups[chatJid];
+    if (!group) return false;
+
+    const personalities = getAllPersonalities();
+    if (personalities.length === 0) return false;
+
+    // Match by slug: lowercase, hyphens/spaces/underscores normalised
+    const normalise = (s: string) =>
+      s.toLowerCase().replace(/[\s_-]+/g, '-').trim();
+    const target = normalise(slug);
+
+    const match = personalities.find((p) => normalise(p.name) === target);
+    if (!match) return false;
+
+    // Already using this personality — no-op
+    const freshGroup = getRegisteredGroup(chatJid);
+    const currentPid = freshGroup?.personalityId || group.personalityId;
+    if (currentPid === match.id) {
+      const channel = findChannel(channels, chatJid);
+      if (channel) {
+        await channel.sendMessage(
+          chatJid,
+          `Already using personality *${match.name}*.`,
+        );
+      }
+      return true;
+    }
+
+    // Switch personality
+    const updated = { ...group, personalityId: match.id };
+    registeredGroups[chatJid] = updated;
+    setRegisteredGroup(chatJid, updated);
+    deleteSession(group.folder);
+
+    const channel = findChannel(channels, chatJid);
+    if (channel) {
+      await channel.sendMessage(
+        chatJid,
+        `Switched to personality *${match.name}*.`,
+      );
+    }
+    logger.info(
+      { chatJid, personality: match.name, personalityId: match.id },
+      'Personality switched via command',
+    );
+    return true;
+  }
+
   // Channel callbacks (shared by all channels)
   const channelOpts = {
     onMessage: (chatJid: string, msg: NewMessage) => {
@@ -686,6 +740,25 @@ async function main(): Promise<void> {
           logger.error({ err, chatJid }, 'Remote control command error'),
         );
         return;
+      }
+
+      // Personality switch commands — intercept /<personality-name>
+      if (trimmed.startsWith('/') && !trimmed.includes(' ')) {
+        const slug = trimmed.slice(1);
+        if (slug.length > 0) {
+          handlePersonalityCommand(slug, chatJid)
+            .then((handled) => {
+              if (!handled) {
+                // Not a personality — store as a normal message
+                storeMessage(msg);
+              }
+            })
+            .catch((err) => {
+              logger.error({ err, chatJid }, 'Personality command error');
+              storeMessage(msg);
+            });
+          return;
+        }
       }
 
       // Sender allowlist drop mode: discard messages from denied senders before storing
