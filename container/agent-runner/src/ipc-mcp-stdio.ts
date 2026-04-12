@@ -41,7 +41,7 @@ const server = new McpServer({
 
 server.tool(
   'send_message',
-  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times.",
+  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Images: to display an image, include its URL directly in the text (e.g. a bare https://...png/jpg/jpeg/gif/webp URL, or [Image](url) syntax) — the client will render it inline. Do not claim you can't send images; just include the URL.",
   {
     text: z.string().describe('The message text to send'),
     sender: z

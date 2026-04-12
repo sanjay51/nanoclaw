@@ -45,6 +45,23 @@
               }
             </div>
           }
+          @if (msg.previews && msg.previews.length) {
+            <div class="flex flex-col gap-2 mt-2">
+              @for (p of msg.previews; track p.url) {
+                @if (p.kind === 'image') {
+                  <a [href]="p.url" target="_blank" rel="noopener" class="block">
+                    <img [src]="p.url" class="max-w-72 max-h-72 rounded border border-border" loading="lazy">
+                  </a>
+                } @else {
+                  <a [href]="p.url" target="_blank" rel="noopener"
+                     class="flex items-center gap-2 px-3 py-2 rounded border border-border bg-black/20 hover:bg-black/30 text-xs no-underline">
+                    <span class="text-accent font-medium">{{ p.host }}</span>
+                    <span class="text-zinc-500 truncate">{{ p.url }}</span>
+                  </a>
+                }
+              }
+            </div>
+          }
         </div>
       }
     }

@@ -10,6 +10,12 @@ import { ToastService } from '../../services/toast.service';
 import { GroupDetail, MessageItem, Personality } from '../../shared/types';
 import { relTime, renderMarkdown } from '../../shared/utils';
 
+interface LinkPreview {
+  url: string;
+  kind: 'image' | 'link';
+  host?: string;
+}
+
 interface ChatMsg {
   text: string;
   cls: 'user' | 'bot';
@@ -17,6 +23,7 @@ interface ChatMsg {
   timestamp: string;
   html?: SafeHtml;
   imageUrls?: string[];
+  previews?: LinkPreview[];
 }
 
 @Component({
@@ -261,7 +268,14 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   private addMessage(text: string, cls: 'user' | 'bot', sender: string, timestamp: string): void {
-    const msg: ChatMsg = { text, cls, sender, timestamp, html: this.renderHtml(text, cls) };
+    const msg: ChatMsg = {
+      text,
+      cls,
+      sender,
+      timestamp,
+      html: this.renderHtml(text, cls),
+      previews: this.extractPreviews(text),
+    };
     this.messages.update(msgs => [...msgs, msg]);
     setTimeout(() => this.scrollBottom(), 20);
   }
@@ -274,30 +288,47 @@ export class ChatComponent implements OnInit, OnDestroy {
       sender: m.sender_name,
       timestamp: m.timestamp,
       html: this.renderHtml(m.content, cls),
+      previews: this.extractPreviews(m.content),
     };
   }
 
   private renderHtml(text: string, cls: string): SafeHtml {
     let html = text;
-    // Replace image refs with img tags
+    // Local container-generated image refs: [Image](/workspace/group/...)
     const folder = this.getFolder();
     if (folder) {
-      html = html.replace(/\[(Image|Photo)\]\s*\(([^)]+)\)/g, (_match, _type, filePath) => {
-        let url: string | null = null;
-        if (/^https?:\/\//i.test(filePath)) {
-          url = filePath;
-        } else {
-          const parts = filePath.match(/\/workspace\/group\/((?:attachments|generated)\/.+)/);
-          if (parts) url = this.api.fileUrl(folder, parts[1]);
-        }
-        if (url) {
+      html = html.replace(/\[(Image|Photo)\]\s*\(([^)]+)\)/g, (m, _t, fp) => {
+        const parts = fp.match(/\/workspace\/group\/((?:attachments|generated)\/.+)/);
+        if (parts) {
+          const url = this.api.fileUrl(folder, parts[1]);
           return `<div class="my-2"><img src="${url}" class="max-w-72 max-h-72 rounded cursor-pointer" onclick="window.open(this.src)" loading="lazy"></div>`;
         }
-        return _match;
+        return m;
       });
     }
     if (cls === 'bot') html = renderMarkdown(html);
     return this.sanitizer.bypassSecurityTrustHtml(html);
+  }
+
+  private extractPreviews(text: string): LinkPreview[] {
+    const urlRe = /https?:\/\/[^\s<>"'`)]+/gi;
+    const imageExt = /\.(png|jpe?g|gif|webp|svg|bmp)(\?|$)/i;
+    const seen = new Set<string>();
+    const out: LinkPreview[] = [];
+    for (const match of text.matchAll(urlRe)) {
+      let url = match[0].replace(/[.,;:!?)\]]+$/, '');
+      if (seen.has(url)) continue;
+      seen.add(url);
+      let host: string | undefined;
+      try {
+        host = new URL(url).host;
+      } catch {
+        continue;
+      }
+      out.push({ url, kind: imageExt.test(url) ? 'image' : 'link', host });
+      if (out.length >= 4) break;
+    }
+    return out;
   }
 
   private getFolder(): string | null {
