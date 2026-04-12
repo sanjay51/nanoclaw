@@ -1,5 +1,5 @@
 ---
-name: image-gen
+name: image
 description: Generate images from a text prompt using Microsoft Copilot / Bing Image Creator. Use whenever the user asks you to create, draw, generate, or make an image, picture, illustration, or artwork. Returns image URLs that render inline in the chat.
 allowed-tools: Bash(agent-browser:*)
 ---
