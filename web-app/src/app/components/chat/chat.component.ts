@@ -283,9 +283,14 @@ export class ChatComponent implements OnInit, OnDestroy {
     const folder = this.getFolder();
     if (folder) {
       html = html.replace(/\[(Image|Photo)\]\s*\(([^)]+)\)/g, (_match, _type, filePath) => {
-        const parts = filePath.match(/\/workspace\/group\/((?:attachments|generated)\/.+)/);
-        if (parts) {
-          const url = this.api.fileUrl(folder, parts[1]);
+        let url: string | null = null;
+        if (/^https?:\/\//i.test(filePath)) {
+          url = filePath;
+        } else {
+          const parts = filePath.match(/\/workspace\/group\/((?:attachments|generated)\/.+)/);
+          if (parts) url = this.api.fileUrl(folder, parts[1]);
+        }
+        if (url) {
           return `<div class="my-2"><img src="${url}" class="max-w-72 max-h-72 rounded cursor-pointer" onclick="window.open(this.src)" loading="lazy"></div>`;
         }
         return _match;
