@@ -75,6 +75,7 @@ export class ChatComponent implements OnInit, OnDestroy {
         }
       } else if (ev.type === 'typing') {
         this.typing.set(!!ev.isTyping);
+        if (ev.isTyping) setTimeout(() => this.scrollBottom(), 20);
       }
     });
 
