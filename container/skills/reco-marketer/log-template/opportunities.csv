@@ -1,0 +1,5 @@
+date_found,source,type,url,domain,anchor_text,domain_authority,competitor,notes,status,last_checked
+2026-04-12,siteguru,resource-page,https://example.com/remote-tools,example.com,,42,kudoboard.com,Listed in "tools for remote teams" roundup,new,2026-04-12
+2026-04-12,haro,haro,https://www.helpareporter.com/queries/12345,helpareporter.com,,,,Journalist at Fast Company asking about farewell traditions in remote teams,new,2026-04-12
+2026-04-12,google-search,broken-link,https://hrblog.example.com/goodbye-ideas,hrblog.example.com,,38,,Has 3 dead links — ours could replace the kudoboard one,new,2026-04-12
+2026-04-12,reddit,social-thread,https://reddit.com/r/remotework/comments/abc123,reddit.com,,,,"User asking ""best way to send a team card for a coworker leaving"" — relevance 9",new,2026-04-12
