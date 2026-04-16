@@ -5,7 +5,7 @@ export class AuthService {
   private _endpoint = signal('');
   private _token = signal('');
   private _connected = signal(false);
-  private _assistantName = signal('NanoClaw');
+  private _assistantName = signal('Romi');
 
   endpoint = this._endpoint.asReadonly();
   token = this._token.asReadonly();

@@ -1110,9 +1110,9 @@
     if (!res.ok) throw new Error('Connection failed: ' + res.status);
 
     statusData = await res.json();
-    assistantName = statusData.assistant || 'NanoClaw';
+    assistantName = statusData.assistant || 'Romi';
 
-    document.title = assistantName + ' \u2014 NanoClaw';
+    document.title = assistantName + ' 🐕';
     assistantTitle.textContent = assistantName;
 
     connectScreen.style.display = 'none';

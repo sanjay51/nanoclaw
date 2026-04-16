@@ -11,7 +11,7 @@ import { StatusService } from '../../services/status.service';
   template: `
     <div class="flex items-center justify-center w-full h-screen">
       <div class="bg-surface border border-border rounded-xl p-8 w-96 max-w-[90vw]">
-        <h1 class="text-xl font-bold tracking-tight mb-1">NanoClaw</h1>
+        <h1 class="text-xl font-bold tracking-tight mb-1">Romi 🐕</h1>
         <p class="text-sm text-zinc-500 mb-6">Connect to your NanoClaw instance</p>
         <form (ngSubmit)="connect()">
           <div class="mb-4">
@@ -73,7 +73,7 @@ export class ConnectComponent {
       if (!res.ok) throw new Error('Connection failed: ' + res.status);
 
       const data = await res.json();
-      this.auth.connect(this.endpoint, this.token, data.assistant || 'NanoClaw');
+      this.auth.connect(this.endpoint, this.token, data.assistant || 'Romi');
       if (this.remember) this.auth.saveCredentials(this.endpoint, this.token);
       this.sse.connect();
       this.status.refresh();

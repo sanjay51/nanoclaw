@@ -170,7 +170,7 @@ SQLite via `better-sqlite3`. File: `store/messages.db`.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `ASSISTANT_NAME` | Andy | Bot display name |
+| `ASSISTANT_NAME` | Romi | Bot display name |
 | `ONECLI_URL` | http://localhost:10254 | Credential gateway |
 | `CONTAINER_IMAGE` | nanoclaw-agent:latest | Agent container image |
 | `CONTAINER_TIMEOUT` | 1800000 (30min) | Hard container timeout |
@@ -182,7 +182,7 @@ SQLite via `better-sqlite3`. File: `store/messages.db`.
 | `TZ` | System/UTC | Timezone for scheduling |
 | `WEB_PORT` | — | Web UI port (opt-in) |
 
-**Trigger system:** `buildTriggerPattern(trigger)` creates regex `^{trigger}\b` (case-insensitive). Default: `@Andy`.
+**Trigger system:** `buildTriggerPattern(trigger)` creates regex `^{trigger}\b` (case-insensitive). Default: `@Romi`.
 
 ### Types: `src/types.ts`
 

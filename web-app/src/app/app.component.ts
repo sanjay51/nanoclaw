@@ -47,7 +47,7 @@ export class AppComponent implements OnInit {
       });
       if (!res.ok) return;
       const data = await res.json();
-      this.auth.connect(endpoint, token, data.assistant || 'NanoClaw');
+      this.auth.connect(endpoint, token, data.assistant || 'Romi');
       this.sse.connect();
       this.status.refresh();
       this.status.startPolling();
