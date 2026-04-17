@@ -67,6 +67,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   messages = signal<ChatMsg[]>([]);
 
   inputText = '';
+  private drafts = new Map<string, string>();
   private sentHistory: string[] = [];
   private historyIndex = -1;
   private draftText = '';
@@ -86,7 +87,10 @@ export class ChatComponent implements OnInit, OnDestroy {
       this.route.paramMap.subscribe(async (params) => {
         const routeJid = params.get('jid');
         if (routeJid) {
+          this.saveDraft();
           this.chatJid.set(routeJid);
+          this.inputText = this.drafts.get(routeJid) ?? '';
+          setTimeout(() => this.autoResizeNow(), 0);
           await this.loadHistory();
         } else {
           const list = this.chatList.chats();
@@ -190,6 +194,7 @@ export class ChatComponent implements OnInit, OnDestroy {
     this.historyIndex = -1;
     this.draftText = '';
     this.inputText = '';
+    this.drafts.delete(this.chatJid());
     this.resetTextarea();
 
     try {
@@ -380,6 +385,21 @@ export class ChatComponent implements OnInit, OnDestroy {
     if (this.textInputEl?.nativeElement) {
       this.textInputEl.nativeElement.style.height = 'auto';
     }
+  }
+
+  private autoResizeNow(): void {
+    const el = this.textInputEl?.nativeElement;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+  }
+
+  private saveDraft(): void {
+    const jid = this.chatJid();
+    if (!jid) return;
+    const text = this.inputText;
+    if (text && text.length) this.drafts.set(jid, text);
+    else this.drafts.delete(jid);
   }
 
   autoResize(event: Event): void {
