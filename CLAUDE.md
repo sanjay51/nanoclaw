@@ -2,6 +2,12 @@
 
 Personal Claude assistant. See [README.md](README.md) for philosophy and setup. See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) for architecture decisions.
 
+## Interaction Rules (ALWAYS follow these)
+
+1. **Acknowledge first.** For every message, immediately respond with a short text plan or acknowledgement before making any tool calls. Never start with silent tool calls.
+2. **Track long tasks.** Assess each task's complexity. For multi-step or longer tasks, create a tracked task via `TaskCreate` (scheduled immediately) so the user can monitor progress in the Tasks tab. Keep task status updated as you work. Quick single-step tasks can be done inline.
+3. **Restart after changes.** After any code or config change, restart the service (`systemctl --user restart nanoclaw`). Don't wait to be asked.
+
 ## Quick Context
 
 Single Node.js process with skill-based channel system. Channels (WhatsApp, Telegram, Slack, Discord, Gmail) are skills that self-register at startup. Messages route to Claude Agent SDK running in containers (Linux VMs). Each group has isolated filesystem and memory.
