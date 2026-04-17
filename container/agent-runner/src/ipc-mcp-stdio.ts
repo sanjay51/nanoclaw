@@ -14,6 +14,7 @@ import { CronExpressionParser } from 'cron-parser';
 const IPC_DIR = '/workspace/ipc';
 const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
 const TASKS_DIR = path.join(IPC_DIR, 'tasks');
+const TASKS_ACK_DIR = path.join(IPC_DIR, 'tasks_ack');
 
 // Context from environment variables (set by the agent runner)
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
@@ -32,6 +33,38 @@ function writeIpcFile(dir: string, data: object): string {
   fs.renameSync(tempPath, filepath);
 
   return filename;
+}
+
+interface TaskIpcAck {
+  ok: boolean;
+  message?: string;
+  error?: string;
+  taskId?: string;
+}
+
+async function waitForAck(
+  filename: string,
+  timeoutMs = 5000,
+): Promise<TaskIpcAck | null> {
+  const ackPath = path.join(TASKS_ACK_DIR, filename);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if (fs.existsSync(ackPath)) {
+        const raw = fs.readFileSync(ackPath, 'utf-8');
+        try {
+          fs.unlinkSync(ackPath);
+        } catch {
+          // host's cleanup may have removed it; ignore
+        }
+        return JSON.parse(raw) as TaskIpcAck;
+      }
+    } catch {
+      // transient FS error; retry
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
 }
 
 const server = new McpServer({
@@ -202,13 +235,38 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
       timestamp: new Date().toISOString(),
     };
 
-    writeIpcFile(TASKS_DIR, data);
+    const filename = writeIpcFile(TASKS_DIR, data);
+    const ack = await waitForAck(filename);
 
+    if (!ack) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Schedule request sent for task ${taskId} but the orchestrator did not acknowledge within 5s. Run list_tasks to verify whether it was actually scheduled before telling the user it succeeded.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (!ack.ok) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Failed to schedule task: ${ack.error ?? 'unknown error'}`,
+          },
+        ],
+        isError: true,
+      };
+    }
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Task ${taskId} scheduled: ${args.schedule_type} - ${args.schedule_value}`,
+          text:
+            ack.message ??
+            `Task ${ack.taskId ?? taskId} scheduled: ${args.schedule_type} - ${args.schedule_value}`,
         },
       ],
     };
@@ -292,13 +350,33 @@ server.tool(
       timestamp: new Date().toISOString(),
     };
 
-    writeIpcFile(TASKS_DIR, data);
+    const filename = writeIpcFile(TASKS_DIR, data);
+    const ack = await waitForAck(filename);
 
+    if (!ack) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Pause request for ${args.task_id} sent but no acknowledgement received within 5s. Verify with list_tasks before assuming success.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (!ack.ok) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Pause failed: ${ack.error}` },
+        ],
+        isError: true,
+      };
+    }
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Task ${args.task_id} pause requested.`,
+          text: ack.message ?? `Task ${args.task_id} paused.`,
         },
       ],
     };
@@ -318,13 +396,33 @@ server.tool(
       timestamp: new Date().toISOString(),
     };
 
-    writeIpcFile(TASKS_DIR, data);
+    const filename = writeIpcFile(TASKS_DIR, data);
+    const ack = await waitForAck(filename);
 
+    if (!ack) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Resume request for ${args.task_id} sent but no acknowledgement received within 5s. Verify with list_tasks before assuming success.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (!ack.ok) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Resume failed: ${ack.error}` },
+        ],
+        isError: true,
+      };
+    }
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Task ${args.task_id} resume requested.`,
+          text: ack.message ?? `Task ${args.task_id} resumed.`,
         },
       ],
     };
@@ -344,13 +442,33 @@ server.tool(
       timestamp: new Date().toISOString(),
     };
 
-    writeIpcFile(TASKS_DIR, data);
+    const filename = writeIpcFile(TASKS_DIR, data);
+    const ack = await waitForAck(filename);
 
+    if (!ack) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Cancel request for ${args.task_id} sent but no acknowledgement received within 5s. Verify with list_tasks before assuming success.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (!ack.ok) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Cancel failed: ${ack.error}` },
+        ],
+        isError: true,
+      };
+    }
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Task ${args.task_id} cancellation requested.`,
+          text: ack.message ?? `Task ${args.task_id} cancelled.`,
         },
       ],
     };
@@ -429,13 +547,33 @@ server.tool(
     if (args.schedule_value !== undefined)
       data.schedule_value = args.schedule_value;
 
-    writeIpcFile(TASKS_DIR, data);
+    const filename = writeIpcFile(TASKS_DIR, data);
+    const ack = await waitForAck(filename);
 
+    if (!ack) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Update request for ${args.task_id} sent but no acknowledgement received within 5s. Verify with list_tasks before assuming success.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (!ack.ok) {
+      return {
+        content: [
+          { type: 'text' as const, text: `Update failed: ${ack.error}` },
+        ],
+        isError: true,
+      };
+    }
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Task ${args.task_id} update requested.`,
+          text: ack.message ?? `Task ${args.task_id} updated.`,
         },
       ],
     };
@@ -490,13 +628,38 @@ Use available_groups.json to find the JID for a group. The folder name must be c
       timestamp: new Date().toISOString(),
     };
 
-    writeIpcFile(TASKS_DIR, data);
+    const filename = writeIpcFile(TASKS_DIR, data);
+    const ack = await waitForAck(filename);
 
+    if (!ack) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Registration request for "${args.name}" sent but no acknowledgement received within 5s. The group may or may not be registered.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    if (!ack.ok) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Registration failed: ${ack.error}`,
+          },
+        ],
+        isError: true,
+      };
+    }
     return {
       content: [
         {
           type: 'text' as const,
-          text: `Group "${args.name}" registered. It will start receiving messages immediately.`,
+          text:
+            ack.message ??
+            `Group "${args.name}" registered. It will start receiving messages immediately.`,
         },
       ],
     };
