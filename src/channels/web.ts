@@ -8,7 +8,10 @@ import {
   createCredential,
   createPersonality,
   createTask,
+  createWebChat,
   decryptPassword,
+  deleteChatAndMessages,
+  deleteChatSession,
   deleteCredential,
   deletePersonality,
   deleteRegisteredGroup,
@@ -28,6 +31,8 @@ import {
   getRegisteredGroup,
   getTaskById,
   getTaskRunLogs,
+  getWebChats,
+  renameChat,
   setRegisteredGroup,
   updateCredential,
   updatePersonality,
@@ -210,6 +215,10 @@ export class WebChannel implements Channel {
     );
     const groupMatch = url.pathname.match(/^\/api\/groups\/([^/]+)$/);
     const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+    const chatMatch = url.pathname.match(/^\/api\/chats\/([^/]+)$/);
+    const chatMsgMatch = url.pathname.match(
+      /^\/api\/chats\/([^/]+)\/messages$/,
+    );
     const personalityMatch = url.pathname.match(
       /^\/api\/personalities\/([^/]+)$/,
     );
@@ -252,7 +261,23 @@ export class WebChannel implements Channel {
     } else if (sessionMatch && req.method === 'DELETE') {
       this.handleDeleteSession(decodeURIComponent(sessionMatch[1]), res);
     } else if (url.pathname === '/api/chats' && req.method === 'GET') {
-      this.handleGetChats(res);
+      if (url.searchParams.get('channel') === 'web') {
+        this.handleGetWebChats(res);
+      } else {
+        this.handleGetChats(res);
+      }
+    } else if (url.pathname === '/api/chats' && req.method === 'POST') {
+      this.handleCreateWebChat(req, res);
+    } else if (chatMsgMatch && req.method === 'GET') {
+      this.handleGetChatMessages(
+        decodeURIComponent(chatMsgMatch[1]),
+        url,
+        res,
+      );
+    } else if (chatMatch && req.method === 'PATCH') {
+      this.handleRenameWebChat(decodeURIComponent(chatMatch[1]), req, res);
+    } else if (chatMatch && req.method === 'DELETE') {
+      this.handleDeleteWebChat(decodeURIComponent(chatMatch[1]), res);
     } else if (url.pathname === '/api/groups' && req.method === 'POST') {
       this.handleRegisterGroup(req, res);
     } else if (url.pathname === '/api/upload' && req.method === 'POST') {
@@ -330,9 +355,10 @@ export class WebChannel implements Channel {
             ? parsed.chat_jid
             : DEFAULT_JID;
         const timestamp = new Date().toISOString();
+        const isWebJid = chatJid.startsWith(JID_PREFIX);
 
         // Only set web metadata for web JIDs — don't overwrite other channels
-        if (chatJid.startsWith(JID_PREFIX)) {
+        if (isWebJid) {
           this.opts.onChatMetadata(
             chatJid,
             timestamp,
@@ -342,8 +368,11 @@ export class WebChannel implements Channel {
           );
         }
 
-        const group = this.opts.registeredGroups()[chatJid];
-        if (!group) {
+        // Web chats are lightweight: they don't require a dedicated registered
+        // group — they piggyback on any registered web:* group's container.
+        // Non-web jids still require explicit registration.
+        const registered = this.opts.registeredGroups();
+        if (!isWebJid && !registered[chatJid]) {
           res.writeHead(403, { 'Content-Type': 'application/json' });
           res.end(
             JSON.stringify({
@@ -351,6 +380,20 @@ export class WebChannel implements Channel {
             }),
           );
           return;
+        }
+        if (isWebJid) {
+          const hasAnyWebGroup = Object.keys(registered).some((j) =>
+            j.startsWith(JID_PREFIX),
+          );
+          if (!hasAnyWebGroup) {
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                error: 'No web host group registered. Register a web:* group first.',
+              }),
+            );
+            return;
+          }
         }
 
         this.opts.onMessage(chatJid, {
@@ -654,12 +697,96 @@ export class WebChannel implements Channel {
     res.end(JSON.stringify({ ok: true }));
   }
 
-  // ---- Chats endpoint ----
+  // ---- Chats endpoints ----
 
   private handleGetChats(res: http.ServerResponse): void {
     const chats = getAllChats();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(chats));
+  }
+
+  private handleGetWebChats(res: http.ServerResponse): void {
+    const chats = getWebChats();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(chats));
+  }
+
+  private handleCreateWebChat(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const data = body ? JSON.parse(body) : {};
+        const name = typeof data.name === 'string' && data.name.trim()
+          ? data.name.trim()
+          : 'New chat';
+        const jid = `${JID_PREFIX}${randomUUID()}`;
+        createWebChat(jid, name);
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ jid, name }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleRenameWebChat(
+    jid: string,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    if (!jid.startsWith(JID_PREFIX)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not a web chat' }));
+      return;
+    }
+    let body = '';
+    req.on('data', (chunk: string) => (body += chunk));
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        if (typeof data.name !== 'string' || !data.name.trim()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'name required' }));
+          return;
+        }
+        renameChat(jid, data.name.trim());
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+      }
+    });
+  }
+
+  private handleDeleteWebChat(jid: string, res: http.ServerResponse): void {
+    if (!jid.startsWith(JID_PREFIX)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not a web chat' }));
+      return;
+    }
+    deleteChatAndMessages(jid);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  }
+
+  private handleGetChatMessages(
+    jid: string,
+    url: URL,
+    res: http.ServerResponse,
+  ): void {
+    const limit = Math.min(
+      parseInt(url.searchParams.get('limit') || '200', 10) || 200,
+      1000,
+    );
+    const msgs = getMessageHistory(jid, limit);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(msgs));
   }
 
   // ---- Group registration ----
@@ -709,10 +836,15 @@ export class WebChannel implements Channel {
     url: URL,
   ): void {
     const chatJid = url.searchParams.get('chat_jid') || DEFAULT_JID;
-    const group = this.opts.registeredGroups()[chatJid];
+    const registered = this.opts.registeredGroups();
+    const isWebJid = chatJid.startsWith(JID_PREFIX);
+    const group = isWebJid
+      ? registered[chatJid] ||
+        Object.entries(registered).find(([j]) => j.startsWith(JID_PREFIX))?.[1]
+      : registered[chatJid];
     if (!group) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Group not registered' }));
+      res.end(JSON.stringify({ error: 'No host group available for this chat' }));
       return;
     }
 

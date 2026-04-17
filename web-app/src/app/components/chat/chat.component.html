@@ -1,109 +1,127 @@
-<div class="flex flex-col h-full">
-  <!-- Header -->
-  <div class="px-6 py-3 border-b border-border bg-surface flex items-center gap-3 shrink-0">
-    <span class="w-2 h-2 rounded-full" [class.bg-green-500]="true"></span>
-    <select [(ngModel)]="chatJid" (ngModelChange)="onGroupChange()" class="px-2.5 py-1.5 rounded border border-border bg-zinc-950 text-sm text-zinc-200 outline-none max-w-72">
-      @for (g of groups(); track g.jid) {
-        <option [value]="g.jid">{{ g.name }} ({{ g.jid }})</option>
-      }
-    </select>
-    <button (click)="clearContext()" title="Clear agent context / start fresh session" class="px-2.5 py-1.5 rounded border border-border text-xs text-zinc-400 hover:bg-zinc-800 whitespace-nowrap">/clear</button>
-    @if (personalities().length) {
-      <select [ngModel]="selectedPersonalityId()" (ngModelChange)="selectedPersonalityId.set($event); onPersonalityChange()" class="px-2.5 py-1.5 rounded border border-border bg-zinc-950 text-sm text-zinc-200 outline-none max-w-56">
-        <option value="">No personality</option>
-        @for (p of personalities(); track p.id) {
-          <option [value]="p.id">{{ p.name }}</option>
-        }
-      </select>
-    }
-  </div>
-
-  <!-- Messages -->
-  <div #messagesContainer class="flex-1 overflow-y-auto p-5 flex flex-col gap-2"
-       (drop)="onDrop($event)" (dragover)="onDragOver($event)">
+<section class="flex-1 flex flex-col min-w-0 min-h-0 h-full">
+  <div
+    #messagesContainer
+    class="flex-1 overflow-y-auto px-6 py-6 min-h-0"
+    (drop)="onDrop($event)"
+    (dragover)="onDragOver($event)"
+  >
     @if (loading()) {
-      <div class="flex-1 flex items-center justify-center text-zinc-500">Loading history...</div>
+      <div class="h-full flex items-center justify-center text-zinc-500 text-sm">Loading...</div>
     } @else if (messages().length === 0) {
-      <div class="flex-1 flex items-center justify-center text-zinc-500 text-sm">Send a message to start chatting.</div>
+      <div class="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center gap-6 px-4">
+        <div>
+          <div class="text-2xl font-semibold text-zinc-100 mb-2">Hey, I'm {{ auth.assistantName() }}.</div>
+          <div class="text-sm text-zinc-400">What should we work on today?</div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+          @for (s of suggestions; track s) {
+            <button
+              (click)="pickSuggestion(s)"
+              class="text-left px-3.5 py-3 rounded-lg border border-border bg-zinc-900/40 hover:bg-zinc-800 hover:border-zinc-600 transition-colors text-sm text-zinc-300"
+            >{{ s }}</button>
+          }
+        </div>
+      </div>
     } @else {
-      @for (msg of messages(); track $index) {
-        <div class="max-w-2xl px-3.5 py-2.5 rounded-xl text-sm leading-relaxed whitespace-pre-wrap break-words"
-             [class]="msg.cls === 'user' ? 'self-end bg-user-bg rounded-br-sm' : 'self-start bg-bot-bg border border-border rounded-bl-sm'">
-          <div class="flex gap-2 items-baseline mb-1 text-[11px]">
-            <span [class]="msg.cls === 'bot' ? 'font-semibold text-accent' : 'font-semibold text-zinc-300'">{{ msg.sender }}</span>
-            <span class="text-zinc-600">{{ rel(msg.timestamp) }}</span>
-          </div>
-          @if (msg.html) {
-            <div [innerHTML]="msg.html" class="chat-content"></div>
-          } @else {
-            {{ msg.text }}
-          }
-          @if (msg.imageUrls) {
-            <div class="flex gap-2 flex-wrap mt-1">
-              @for (url of msg.imageUrls; track url) {
-                <img [src]="url" class="max-w-36 max-h-36 rounded cursor-pointer" (click)="0">
-              }
+      <div class="max-w-3xl mx-auto flex flex-col gap-3">
+        @for (msg of messages(); track $index) {
+          <div
+            class="px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words max-w-[85%]"
+            [class]="msg.cls === 'user' ? 'self-end bg-user-bg rounded-br-md' : 'self-start bg-bot-bg border border-border rounded-bl-md'"
+          >
+            <div class="flex gap-2 items-baseline mb-1 text-[11px]">
+              <span [class]="msg.cls === 'bot' ? 'font-semibold text-accent' : 'font-semibold text-zinc-300'">{{ msg.sender }}</span>
+              <span class="text-zinc-600">{{ rel(msg.timestamp) }}</span>
             </div>
-          }
-          @if (msg.previews && msg.previews.length) {
-            <div class="flex flex-col gap-2 mt-2">
-              @for (p of msg.previews; track p.url) {
-                @if (p.kind === 'image') {
-                  <a [href]="p.url" target="_blank" rel="noopener" class="block">
-                    <img [src]="p.url" class="max-w-72 max-h-72 rounded border border-border" loading="lazy">
-                  </a>
-                } @else {
-                  <a [href]="p.url" target="_blank" rel="noopener"
-                     class="flex items-center gap-2 px-3 py-2 rounded border border-border bg-black/20 hover:bg-black/30 text-xs no-underline">
-                    <span class="text-accent font-medium">{{ p.host }}</span>
-                    <span class="text-zinc-500 truncate">{{ p.url }}</span>
-                  </a>
+            @if (msg.html) {
+              <div [innerHTML]="msg.html" class="chat-content"></div>
+            } @else {
+              {{ msg.text }}
+            }
+            @if (msg.imageUrls) {
+              <div class="flex gap-2 flex-wrap mt-1">
+                @for (url of msg.imageUrls; track url) {
+                  <img [src]="url" class="max-w-36 max-h-36 rounded cursor-pointer" (click)="0" />
                 }
-              }
+              </div>
+            }
+            @if (msg.previews && msg.previews.length) {
+              <div class="flex flex-col gap-2 mt-2">
+                @for (p of msg.previews; track p.url) {
+                  @if (p.kind === 'image') {
+                    <a [href]="p.url" target="_blank" rel="noopener" class="block">
+                      <img [src]="p.url" class="max-w-72 max-h-72 rounded border border-border" loading="lazy" />
+                    </a>
+                  } @else {
+                    <a
+                      [href]="p.url"
+                      target="_blank"
+                      rel="noopener"
+                      class="flex items-center gap-2 px-3 py-2 rounded border border-border bg-black/20 hover:bg-black/30 text-xs no-underline"
+                    >
+                      <span class="text-accent font-medium">{{ p.host }}</span>
+                      <span class="text-zinc-500 truncate">{{ p.url }}</span>
+                    </a>
+                  }
+                }
+              </div>
+            }
+          </div>
+        }
+        @if (typing()) {
+          <div class="self-start max-w-[85%] px-4 py-3 rounded-2xl bg-bot-bg border border-border rounded-bl-md">
+            <div class="flex items-center gap-2 text-sm text-zinc-400">
+              <span class="flex gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-[thinking-dot_1.4s_ease-in-out_infinite]"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-[thinking-dot_1.4s_ease-in-out_0.2s_infinite]"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-[thinking-dot_1.4s_ease-in-out_0.4s_infinite]"></span>
+              </span>
+              <span class="text-xs text-zinc-500">{{ auth.assistantName() }} is thinking</span>
             </div>
-          }
-        </div>
-      }
-    }
-    @if (typing()) {
-      <div class="self-start max-w-2xl px-3.5 py-2.5 rounded-xl bg-bot-bg border border-border rounded-bl-sm">
-        <div class="flex items-center gap-2 text-sm text-zinc-400">
-          <span class="flex gap-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-[thinking-dot_1.4s_ease-in-out_infinite]"></span>
-            <span class="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-[thinking-dot_1.4s_ease-in-out_0.2s_infinite]"></span>
-            <span class="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-[thinking-dot_1.4s_ease-in-out_0.4s_infinite]"></span>
-          </span>
-          <span class="text-xs text-zinc-500">{{ auth.assistantName() }} is thinking</span>
-        </div>
+          </div>
+        }
       </div>
     }
   </div>
 
-  <!-- Image preview -->
   @if (previewUrls().length) {
     <div class="flex gap-2 px-6 py-2 border-t border-border bg-surface flex-wrap">
       @for (url of previewUrls(); track url; let i = $index) {
         <div class="relative w-14 h-14">
-          <img [src]="url" class="w-full h-full object-cover rounded border border-border">
-          <button (click)="removeFile(i)" class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center">&times;</button>
+          <img [src]="url" class="w-full h-full object-cover rounded border border-border" />
+          <button
+            (click)="removeFile(i)"
+            class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center"
+          >&times;</button>
         </div>
       }
     </div>
   }
 
-  <!-- Input -->
-  <div class="px-6 py-3 border-t border-border bg-surface shrink-0">
-    <form (ngSubmit)="send()" class="flex gap-2 max-w-3xl mx-auto">
-      <label class="flex items-center justify-center w-10 h-10 rounded-xl border border-border bg-zinc-950 cursor-pointer hover:bg-zinc-800 text-lg shrink-0">
-        <input type="file" accept="image/*" multiple hidden (change)="onFileSelect($event)">
-        &#128247;
-      </label>
-      <textarea #textInput [(ngModel)]="inputText" name="text" rows="1"
-                (keydown)="onKeydown($event)" (input)="autoResize($event)" (paste)="onPaste($event)"
-                placeholder="Message {{ auth.assistantName() }}... (paste or drop images)"
-                class="flex-1 px-3.5 py-2.5 rounded-xl border border-border bg-zinc-950 text-zinc-200 text-sm resize-none outline-none focus:border-accent min-h-[42px] max-h-[200px]">
-      </textarea>
-      <button type="submit" class="px-5 rounded-xl bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors whitespace-nowrap">Send</button>
+  <div class="px-6 py-4 border-t border-border bg-surface shrink-0">
+    <form (ngSubmit)="send()" class="max-w-3xl mx-auto">
+      <div class="flex items-end gap-2 px-2 py-2 rounded-2xl border border-border bg-zinc-950 focus-within:border-accent transition-colors">
+        <label class="flex items-center justify-center w-9 h-9 rounded-lg cursor-pointer hover:bg-zinc-800 text-lg shrink-0 text-zinc-400">
+          <input type="file" accept="image/*" multiple hidden (change)="onFileSelect($event)" />
+          &#128247;
+        </label>
+        <textarea
+          #textInput
+          [(ngModel)]="inputText"
+          name="text"
+          rows="1"
+          (keydown)="onKeydown($event)"
+          (input)="autoResize($event)"
+          (paste)="onPaste($event)"
+          placeholder="Message {{ auth.assistantName() }}..."
+          class="flex-1 px-2 py-2 bg-transparent text-zinc-200 text-sm resize-none outline-none min-h-[36px] max-h-[200px] placeholder:text-zinc-500"
+        ></textarea>
+        <button
+          type="submit"
+          class="w-9 h-9 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors shrink-0 flex items-center justify-center"
+          title="Send"
+        >&#10148;</button>
+      </div>
     </form>
   </div>
-</div>
+</section>

@@ -59,6 +59,19 @@ export class ApiService {
 
   // Chats
   getChats(): Promise<ChatSummary[]> { return this.request('GET', '/api/chats'); }
+  getWebChats(): Promise<ChatSummary[]> { return this.request('GET', '/api/chats?channel=web'); }
+  createWebChat(name?: string): Promise<{ jid: string; name: string }> {
+    return this.request('POST', '/api/chats', { name: name || 'New chat' });
+  }
+  renameWebChat(jid: string, name: string): Promise<{ ok: boolean }> {
+    return this.request('PATCH', `/api/chats/${encodeURIComponent(jid)}`, { name });
+  }
+  deleteWebChat(jid: string): Promise<{ ok: boolean }> {
+    return this.request('DELETE', `/api/chats/${encodeURIComponent(jid)}`);
+  }
+  getChatMessages(jid: string, limit = 200): Promise<MessageItem[]> {
+    return this.request('GET', `/api/chats/${encodeURIComponent(jid)}/messages?limit=${limit}`);
+  }
 
   // Messages
   sendMessage(text: string, chatJid?: string): Promise<void> {

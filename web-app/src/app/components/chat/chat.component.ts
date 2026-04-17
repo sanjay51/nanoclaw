@@ -1,13 +1,23 @@
-import { Component, inject, OnInit, OnDestroy, signal, ElementRef, ViewChild } from '@angular/core';
+import {
+  Component,
+  inject,
+  OnInit,
+  OnDestroy,
+  signal,
+  ElementRef,
+  ViewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { ChatListService } from '../../services/chat-list.service';
 import { SseService } from '../../services/sse.service';
 import { StatusService } from '../../services/status.service';
 import { ToastService } from '../../services/toast.service';
-import { GroupDetail, MessageItem, Personality } from '../../shared/types';
+import { MessageItem } from '../../shared/types';
 import { relTime, renderMarkdown } from '../../shared/utils';
 
 interface LinkPreview {
@@ -26,6 +36,13 @@ interface ChatMsg {
   previews?: LinkPreview[];
 }
 
+const SUGGESTIONS = [
+  'Summarize the latest AI research in 5 bullets',
+  'Plan a 3-day trip to Lisbon with a $800 budget',
+  'Draft a polite follow-up email for a delayed invoice',
+  'Explain async/await to a junior engineer',
+];
+
 @Component({
   selector: 'app-chat',
   standalone: true,
@@ -39,15 +56,16 @@ export class ChatComponent implements OnInit, OnDestroy {
   private status = inject(StatusService);
   private toast = inject(ToastService);
   private sanitizer = inject(DomSanitizer);
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private chatList = inject(ChatListService);
 
   @ViewChild('messagesContainer') messagesEl!: ElementRef<HTMLDivElement>;
   @ViewChild('textInput') textInputEl!: ElementRef<HTMLTextAreaElement>;
 
-  groups = signal<GroupDetail[]>([]);
-  personalities = signal<Personality[]>([]);
-  selectedPersonalityId = signal('');
   chatJid = signal('');
   messages = signal<ChatMsg[]>([]);
+
   inputText = '';
   private sentHistory: string[] = [];
   private historyIndex = -1;
@@ -57,90 +75,74 @@ export class ChatComponent implements OnInit, OnDestroy {
   loading = signal(false);
   typing = signal(false);
   rel = relTime;
+  suggestions = SUGGESTIONS;
 
-  private sub!: Subscription;
+  private subs: Subscription[] = [];
 
   async ngOnInit(): Promise<void> {
-    const [groupList, personalityList] = await Promise.all([
-      this.api.getGroups().catch(() => [] as GroupDetail[]),
-      this.api.getPersonalities().catch(() => [] as Personality[]),
-    ]);
-    this.groups.set(groupList);
-    this.personalities.set(personalityList);
+    this.chatList.start();
 
-    // Default to web group
-    const webGroup = groupList.find(g => g.jid.startsWith('web:'));
-    this.chatJid.set(webGroup?.jid || groupList[0]?.jid || '');
-    this.syncPersonalityFromGroup();
-
-    this.sub = this.sse.messages.subscribe(ev => {
-      if (ev.type === 'message' && ev.text) {
-        const jid = ev.chatJid || '';
-        if (!this.chatJid() || !jid || jid === this.chatJid()) {
-          this.addMessage(ev.text, 'bot', this.auth.assistantName(), ev.timestamp || new Date().toISOString());
-          this.typing.set(false);
+    this.subs.push(
+      this.route.paramMap.subscribe(async (params) => {
+        const routeJid = params.get('jid');
+        if (routeJid) {
+          this.chatJid.set(routeJid);
+          await this.loadHistory();
+        } else {
+          const list = this.chatList.chats();
+          if (list.length > 0) {
+            this.router.navigate(['/chat', list[0].jid], { replaceUrl: true });
+          } else {
+            await this.createAndNavigate(true);
+          }
         }
-      } else if (ev.type === 'typing') {
-        this.typing.set(!!ev.isTyping);
-        if (ev.isTyping) setTimeout(() => this.scrollBottom(), 20);
-      }
-    });
+      }),
+    );
 
-    if (this.chatJid()) this.loadHistory();
+    this.subs.push(
+      this.sse.messages.subscribe((ev) => {
+        if (ev.type === 'message' && ev.text) {
+          const jid = ev.chatJid || '';
+          if (jid === this.chatJid()) {
+            this.addMessage(
+              ev.text,
+              'bot',
+              this.auth.assistantName(),
+              ev.timestamp || new Date().toISOString(),
+            );
+            this.typing.set(false);
+          }
+        } else if (ev.type === 'typing') {
+          this.typing.set(!!ev.isTyping);
+          if (ev.isTyping) setTimeout(() => this.scrollBottom(), 20);
+        }
+      }),
+    );
   }
 
   ngOnDestroy(): void {
-    this.sub?.unsubscribe();
+    for (const s of this.subs) s.unsubscribe();
   }
 
-  async onGroupChange(): Promise<void> {
-    this.messages.set([]);
-    this.syncPersonalityFromGroup();
-    if (this.chatJid()) await this.loadHistory();
-  }
-
-  async onPersonalityChange(): Promise<void> {
-    const jid = this.chatJid();
-    if (!jid) return;
+  private async createAndNavigate(replaceUrl = false): Promise<void> {
     try {
-      await this.api.updateGroup(jid, {
-        personalityId: this.selectedPersonalityId() || null,
-      });
-      // Update local group list
-      const groups = this.groups();
-      const idx = groups.findIndex(g => g.jid === jid);
-      if (idx >= 0) {
-        const updated = { ...groups[idx], personalityId: this.selectedPersonalityId() || null };
-        this.groups.set([...groups.slice(0, idx), updated, ...groups.slice(idx + 1)]);
-      }
-    } catch { /* silent */ }
-  }
-
-  private syncPersonalityFromGroup(): void {
-    const group = this.groups().find(g => g.jid === this.chatJid());
-    this.selectedPersonalityId.set(group?.personalityId || '');
-  }
-
-  async clearContext(): Promise<void> {
-    const folder = this.getFolder();
-    if (!folder) {
-      this.toast.show('No group selected', true);
-      return;
-    }
-    try {
-      await this.api.deleteSession(folder);
-      this.toast.show('Context cleared — next message starts a fresh session');
+      const created = await this.chatList.create();
+      this.router.navigate(['/chat', created.jid], { replaceUrl });
     } catch (e: any) {
       this.toast.show(e.message, true);
     }
   }
 
   async loadHistory(): Promise<void> {
+    const jid = this.chatJid();
+    if (!jid) {
+      this.messages.set([]);
+      return;
+    }
     this.loading.set(true);
     try {
-      const msgs = await this.api.getGroupMessages(this.chatJid());
-      const chatMsgs = msgs.map(m => this.toMsg(m));
-      this.messages.set(chatMsgs);
+      const msgs = await this.api.getChatMessages(jid);
+      this.messages.set(msgs.map((m) => this.toMsg(m)));
       setTimeout(() => this.scrollBottom(), 50);
     } catch {
       this.messages.set([]);
@@ -149,18 +151,33 @@ export class ChatComponent implements OnInit, OnDestroy {
     }
   }
 
+  pickSuggestion(text: string): void {
+    this.inputText = text;
+    setTimeout(() => this.textInputEl?.nativeElement.focus(), 0);
+  }
+
   async send(): Promise<void> {
     const text = this.inputText.trim();
     if (!text && !this.pendingFiles.length) return;
+    if (!this.chatJid()) {
+      await this.createAndNavigate();
+      if (!this.chatJid()) return;
+    }
 
     const display = text || `[Image${this.pendingFiles.length > 1 ? 's' : ''}]`;
     this.addMessage(display, 'user', 'You', new Date().toISOString());
 
-    // Show image previews
     if (this.pendingFiles.length) {
       const last = this.messages();
       const msg = last[last.length - 1];
       if (msg) msg.imageUrls = this.previewUrls().slice();
+    }
+
+    // Rename chat from "New chat" on first user message
+    const currentChat = this.chatList.chats().find((c) => c.jid === this.chatJid());
+    if (currentChat && currentChat.name === 'New chat' && text) {
+      const title = text.split('\n')[0].slice(0, 60).trim();
+      if (title) this.chatList.rename(currentChat.jid, title).catch(() => {});
     }
 
     this.sentHistory.unshift(text);
@@ -188,7 +205,6 @@ export class ChatComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // ArrowUp: cycle back through sent history (only when cursor is at start)
     if (event.key === 'ArrowUp' && this.sentHistory.length > 0) {
       const el = this.textInputEl?.nativeElement;
       if (el && el.selectionStart === 0 && el.selectionEnd === 0) {
@@ -201,7 +217,6 @@ export class ChatComponent implements OnInit, OnDestroy {
       }
     }
 
-    // ArrowDown: cycle forward, back to draft
     if (event.key === 'ArrowDown' && this.historyIndex >= 0) {
       const el = this.textInputEl?.nativeElement;
       const atEnd = el && el.selectionStart === el.value.length;
@@ -216,7 +231,6 @@ export class ChatComponent implements OnInit, OnDestroy {
     }
   }
 
-  // File handling
   onFileSelect(event: Event): void {
     const input = event.target as HTMLInputElement;
     if (input.files) this.addFiles(input.files);
@@ -230,10 +244,16 @@ export class ChatComponent implements OnInit, OnDestroy {
     for (let i = 0; i < items.length; i++) {
       if (items[i].type.startsWith('image/')) {
         const file = items[i].getAsFile();
-        if (file) { this.pendingFiles.push(file); hasImage = true; }
+        if (file) {
+          this.pendingFiles.push(file);
+          hasImage = true;
+        }
       }
     }
-    if (hasImage) { event.preventDefault(); this.updatePreviews(); }
+    if (hasImage) {
+      event.preventDefault();
+      this.updatePreviews();
+    }
   }
 
   onDrop(event: DragEvent): void {
@@ -264,10 +284,15 @@ export class ChatComponent implements OnInit, OnDestroy {
   }
 
   private updatePreviews(): void {
-    this.previewUrls.set(this.pendingFiles.map(f => URL.createObjectURL(f)));
+    this.previewUrls.set(this.pendingFiles.map((f) => URL.createObjectURL(f)));
   }
 
-  private addMessage(text: string, cls: 'user' | 'bot', sender: string, timestamp: string): void {
+  private addMessage(
+    text: string,
+    cls: 'user' | 'bot',
+    sender: string,
+    timestamp: string,
+  ): void {
     const msg: ChatMsg = {
       text,
       cls,
@@ -276,7 +301,7 @@ export class ChatComponent implements OnInit, OnDestroy {
       html: this.renderHtml(text, cls),
       previews: this.extractPreviews(text),
     };
-    this.messages.update(msgs => [...msgs, msg]);
+    this.messages.update((msgs) => [...msgs, msg]);
     setTimeout(() => this.scrollBottom(), 20);
   }
 
@@ -294,7 +319,6 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   private renderHtml(text: string, cls: string): SafeHtml {
     let html = text;
-    // Local container-generated image refs: [Image](/workspace/group/...)
     const folder = this.getFolder();
     if (folder) {
       html = html.replace(/\[(Image|Photo)\]\s*\(([^)]+)\)/g, (m, _t, fp) => {
@@ -334,8 +358,10 @@ export class ChatComponent implements OnInit, OnDestroy {
   private getFolder(): string | null {
     const s = this.status.status();
     if (!s) return null;
-    const g = s.groups.find(g => g.jid === this.chatJid());
-    return g?.folder || null;
+    const preferred = s.groups.find((g) => g.jid === 'web:localhost');
+    if (preferred) return preferred.folder;
+    const anyWeb = s.groups.find((g) => g.jid.startsWith('web:'));
+    return anyWeb?.folder || null;
   }
 
   private scrollBottom(): void {

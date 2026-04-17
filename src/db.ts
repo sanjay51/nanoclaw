@@ -81,6 +81,10 @@ function createSchema(database: Database.Database): void {
       group_folder TEXT PRIMARY KEY,
       session_id TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      chat_jid TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS registered_groups (
       jid TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -675,6 +679,58 @@ export function getAllSessions(): Record<string, string> {
     result[row.group_folder] = row.session_id;
   }
   return result;
+}
+
+// --- Per-chat session accessors (lightweight web chats) ---
+
+export function getChatSession(chatJid: string): string | undefined {
+  const row = db
+    .prepare('SELECT session_id FROM chat_sessions WHERE chat_jid = ?')
+    .get(chatJid) as { session_id: string } | undefined;
+  return row?.session_id;
+}
+
+export function setChatSession(chatJid: string, sessionId: string): void {
+  db.prepare(
+    'INSERT OR REPLACE INTO chat_sessions (chat_jid, session_id) VALUES (?, ?)',
+  ).run(chatJid, sessionId);
+}
+
+export function deleteChatSession(chatJid: string): void {
+  db.prepare('DELETE FROM chat_sessions WHERE chat_jid = ?').run(chatJid);
+}
+
+// --- Web chat CRUD (lightweight) ---
+
+export function createWebChat(jid: string, name: string): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT OR IGNORE INTO chats (jid, name, last_message_time, channel, is_group) VALUES (?, ?, ?, 'web', 0)`,
+  ).run(jid, name, now);
+}
+
+export function renameChat(chatJid: string, name: string): void {
+  db.prepare('UPDATE chats SET name = ? WHERE jid = ?').run(name, chatJid);
+}
+
+export function deleteChatAndMessages(chatJid: string): void {
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM messages WHERE chat_jid = ?').run(chatJid);
+    db.prepare('DELETE FROM chat_sessions WHERE chat_jid = ?').run(chatJid);
+    db.prepare('DELETE FROM chats WHERE jid = ?').run(chatJid);
+  });
+  tx();
+}
+
+export function getWebChats(): ChatInfo[] {
+  return db
+    .prepare(
+      `SELECT jid, name, last_message_time, channel, is_group
+       FROM chats
+       WHERE jid LIKE 'web:%' AND jid != '__group_sync__'
+       ORDER BY last_message_time DESC`,
+    )
+    .all() as ChatInfo[];
 }
 
 // --- Registered group accessors ---

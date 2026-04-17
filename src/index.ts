@@ -38,7 +38,9 @@ import {
   getAllPersonalities,
   getAllRegisteredGroups,
   getAllSessions,
+  getChatSession,
   getSession,
+  deleteChatSession,
   deleteSession,
   getAllTasks,
   getLastBotMessageTimestamp,
@@ -48,6 +50,7 @@ import {
   getRegisteredGroup,
   getRouterState,
   initDatabase,
+  setChatSession,
   setRegisteredGroup,
   setRouterState,
   setSession,
@@ -104,6 +107,61 @@ function ensureOneCLIAgent(jid: string, group: RegisteredGroup): void {
       );
     },
   );
+}
+
+const WEB_JID_PREFIX = 'web:';
+
+function isWebChat(chatJid: string): boolean {
+  return chatJid.startsWith(WEB_JID_PREFIX);
+}
+
+/**
+ * Resolve a chat_jid to the registered group that hosts its container.
+ * Registered groups return themselves. Lightweight web chats (not registered)
+ * fall back to any registered web:* group — its folder and container_config
+ * are shared, but each chat keeps its own session id.
+ */
+function resolveHostGroup(chatJid: string): RegisteredGroup | undefined {
+  const direct = registeredGroups[chatJid];
+  if (direct) return direct;
+  if (!isWebChat(chatJid)) return undefined;
+  const preferred = registeredGroups[WEB_JID_PREFIX + 'localhost'];
+  if (preferred) return preferred;
+  for (const [jid, group] of Object.entries(registeredGroups)) {
+    if (jid.startsWith(WEB_JID_PREFIX)) return group;
+  }
+  return undefined;
+}
+
+function sessionKey(chatJid: string, group: RegisteredGroup): { kind: 'chat' | 'folder'; key: string } {
+  if (isWebChat(chatJid)) return { kind: 'chat', key: chatJid };
+  return { kind: 'folder', key: group.folder };
+}
+
+function readSession(chatJid: string, group: RegisteredGroup): string | undefined {
+  const k = sessionKey(chatJid, group);
+  if (k.kind === 'chat') return getChatSession(k.key);
+  return getSession(k.key);
+}
+
+function writeSession(chatJid: string, group: RegisteredGroup, sessionId: string): void {
+  const k = sessionKey(chatJid, group);
+  if (k.kind === 'chat') {
+    setChatSession(k.key, sessionId);
+  } else {
+    sessions[group.folder] = sessionId;
+    setSession(k.key, sessionId);
+  }
+}
+
+function clearSession(chatJid: string, group: RegisteredGroup): void {
+  const k = sessionKey(chatJid, group);
+  if (k.kind === 'chat') {
+    deleteChatSession(k.key);
+  } else {
+    delete sessions[group.folder];
+    deleteSession(k.key);
+  }
 }
 
 function loadState(): void {
@@ -226,7 +284,7 @@ export function _setRegisteredGroups(
  * Called by the GroupQueue when it's this group's turn.
  */
 async function processGroupMessages(chatJid: string): Promise<boolean> {
-  const group = registeredGroups[chatJid];
+  const group = resolveHostGroup(chatJid);
   if (!group) return true;
 
   const channel = findChannel(channels, chatJid);
@@ -414,7 +472,9 @@ async function runAgent(
   const isMain = group.isMain === true;
   // Read session from DB (not in-memory cache) so that external deletions
   // (e.g. web API clearing session after personality update) take effect.
-  const sessionId = getSession(group.folder);
+  // For lightweight web chats, session is keyed by chat_jid so each chat
+  // keeps its own conversation context even though the folder is shared.
+  const sessionId = readSession(chatJid, group);
 
   // Update tasks snapshot for container to read (filtered by group)
   const tasks = getAllTasks();
@@ -446,8 +506,7 @@ async function runAgent(
   const wrappedOnOutput = onOutput
     ? async (output: ContainerOutput) => {
         if (output.newSessionId) {
-          sessions[group.folder] = output.newSessionId;
-          setSession(group.folder, output.newSessionId);
+          writeSession(chatJid, group, output.newSessionId);
         }
         await onOutput(output);
       }
@@ -470,8 +529,7 @@ async function runAgent(
     );
 
     if (output.newSessionId) {
-      sessions[group.folder] = output.newSessionId;
-      setSession(group.folder, output.newSessionId);
+      writeSession(chatJid, group, output.newSessionId);
     }
 
     if (output.status === 'error') {
@@ -491,8 +549,7 @@ async function runAgent(
           { group: group.name, staleSessionId: sessionId, error: output.error },
           'Stale session detected — clearing for next retry',
         );
-        delete sessions[group.folder];
-        deleteSession(group.folder);
+        clearSession(chatJid, group);
       }
 
       logger.error(
@@ -520,7 +577,11 @@ async function startMessageLoop(): Promise<void> {
 
   while (true) {
     try {
-      const jids = Object.keys(registeredGroups);
+      const registeredJids = Object.keys(registeredGroups);
+      const webChatJids = getAllChats()
+        .filter((c) => c.jid.startsWith(WEB_JID_PREFIX) && !registeredGroups[c.jid])
+        .map((c) => c.jid);
+      const jids = [...registeredJids, ...webChatJids];
       const { messages, newTimestamp } = getNewMessages(
         jids,
         lastTimestamp,
@@ -546,7 +607,7 @@ async function startMessageLoop(): Promise<void> {
         }
 
         for (const [chatJid, groupMessages] of messagesByGroup) {
-          const group = registeredGroups[chatJid];
+          const group = resolveHostGroup(chatJid);
           if (!group) continue;
 
           const channel = findChannel(channels, chatJid);
