@@ -9,9 +9,9 @@ import { relTime } from '../../shared/utils';
   standalone: true,
   template: `
     <div class="px-6 py-4 border-b border-border bg-surface flex items-center gap-3">
-      <h2 class="text-lg font-semibold">Groups</h2>
+      <h2 class="text-lg font-semibold">Channels</h2>
       <div class="ml-auto">
-        <button (click)="router.navigate(['/groups/register'])" class="px-3 py-1.5 rounded bg-accent text-white text-sm font-medium hover:bg-accent-hover">+ Register Group</button>
+        <button (click)="router.navigate(['/groups/register'])" class="px-3 py-1.5 rounded bg-accent text-white text-sm font-medium hover:bg-accent-hover">+ Register Channel</button>
       </div>
     </div>
     <div class="p-6 overflow-y-auto flex-1">
@@ -37,7 +37,7 @@ import { relTime } from '../../shared/utils';
           </tbody>
         </table>
       } @else {
-        <p class="text-zinc-500 text-center py-10 italic">No groups registered</p>
+        <p class="text-zinc-500 text-center py-10 italic">No channels registered</p>
       }
     </div>
   `,
