@@ -113,8 +113,13 @@ export class ChatComponent implements OnInit, OnDestroy {
             this.typing.set(false);
           }
         } else if (ev.type === 'typing') {
-          this.typing.set(!!ev.isTyping);
-          if (ev.isTyping) setTimeout(() => this.scrollBottom(), 20);
+          // Typing events carry chatJid; legacy events without one fall back
+          // to applying to the current chat.
+          const typingJid = ev.chatJid || this.chatJid();
+          if (typingJid === this.chatJid()) {
+            this.typing.set(!!ev.isTyping);
+            if (ev.isTyping) setTimeout(() => this.scrollBottom(), 20);
+          }
         }
       }),
     );
@@ -135,6 +140,7 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   async loadHistory(): Promise<void> {
     const jid = this.chatJid();
+    this.typing.set(false);
     if (!jid) {
       this.messages.set([]);
       return;

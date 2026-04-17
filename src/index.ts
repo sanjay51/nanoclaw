@@ -133,18 +133,28 @@ function resolveHostGroup(chatJid: string): RegisteredGroup | undefined {
   return undefined;
 }
 
-function sessionKey(chatJid: string, group: RegisteredGroup): { kind: 'chat' | 'folder'; key: string } {
+function sessionKey(
+  chatJid: string,
+  group: RegisteredGroup,
+): { kind: 'chat' | 'folder'; key: string } {
   if (isWebChat(chatJid)) return { kind: 'chat', key: chatJid };
   return { kind: 'folder', key: group.folder };
 }
 
-function readSession(chatJid: string, group: RegisteredGroup): string | undefined {
+function readSession(
+  chatJid: string,
+  group: RegisteredGroup,
+): string | undefined {
   const k = sessionKey(chatJid, group);
   if (k.kind === 'chat') return getChatSession(k.key);
   return getSession(k.key);
 }
 
-function writeSession(chatJid: string, group: RegisteredGroup, sessionId: string): void {
+function writeSession(
+  chatJid: string,
+  group: RegisteredGroup,
+  sessionId: string,
+): void {
   const k = sessionKey(chatJid, group);
   if (k.kind === 'chat') {
     setChatSession(k.key, sessionId);
@@ -579,7 +589,9 @@ async function startMessageLoop(): Promise<void> {
     try {
       const registeredJids = Object.keys(registeredGroups);
       const webChatJids = getAllChats()
-        .filter((c) => c.jid.startsWith(WEB_JID_PREFIX) && !registeredGroups[c.jid])
+        .filter(
+          (c) => c.jid.startsWith(WEB_JID_PREFIX) && !registeredGroups[c.jid],
+        )
         .map((c) => c.jid);
       const jids = [...registeredJids, ...webChatJids];
       const { messages, newTimestamp } = getNewMessages(

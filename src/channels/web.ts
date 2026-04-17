@@ -119,7 +119,7 @@ export class WebChannel implements Channel {
   }
 
   async setTyping(jid: string, isTyping: boolean): Promise<void> {
-    const event = JSON.stringify({ type: 'typing', isTyping });
+    const event = JSON.stringify({ type: 'typing', chatJid: jid, isTyping });
     this.broadcast(`data: ${event}\n\n`);
   }
 
@@ -269,11 +269,7 @@ export class WebChannel implements Channel {
     } else if (url.pathname === '/api/chats' && req.method === 'POST') {
       this.handleCreateWebChat(req, res);
     } else if (chatMsgMatch && req.method === 'GET') {
-      this.handleGetChatMessages(
-        decodeURIComponent(chatMsgMatch[1]),
-        url,
-        res,
-      );
+      this.handleGetChatMessages(decodeURIComponent(chatMsgMatch[1]), url, res);
     } else if (chatMatch && req.method === 'PATCH') {
       this.handleRenameWebChat(decodeURIComponent(chatMatch[1]), req, res);
     } else if (chatMatch && req.method === 'DELETE') {
@@ -389,7 +385,8 @@ export class WebChannel implements Channel {
             res.writeHead(503, { 'Content-Type': 'application/json' });
             res.end(
               JSON.stringify({
-                error: 'No web host group registered. Register a web:* group first.',
+                error:
+                  'No web host group registered. Register a web:* group first.',
               }),
             );
             return;
@@ -720,9 +717,10 @@ export class WebChannel implements Channel {
     req.on('end', () => {
       try {
         const data = body ? JSON.parse(body) : {};
-        const name = typeof data.name === 'string' && data.name.trim()
-          ? data.name.trim()
-          : 'New chat';
+        const name =
+          typeof data.name === 'string' && data.name.trim()
+            ? data.name.trim()
+            : 'New chat';
         const jid = `${JID_PREFIX}${randomUUID()}`;
         createWebChat(jid, name);
         res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -844,7 +842,9 @@ export class WebChannel implements Channel {
       : registered[chatJid];
     if (!group) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'No host group available for this chat' }));
+      res.end(
+        JSON.stringify({ error: 'No host group available for this chat' }),
+      );
       return;
     }
 
