@@ -34,12 +34,10 @@ export class AppComponent implements OnInit {
 
   navItems = [
     { path: '/chat', label: 'Chat', icon: '\u2709' },
-    { path: '/dashboard', label: 'Dashboard', icon: '\u25A0' },
     { path: '/groups', label: 'Channels', icon: '\u2605' },
     { path: '/tasks', label: 'Tasks', icon: '\u23F0' },
     { path: '/personalities', label: 'Personalities', icon: '\u2728' },
     { path: '/credentials', label: 'Credentials', icon: '\uD83D\uDD12' },
-    { path: '/system', label: 'System', icon: '\u2699' },
   ];
 
   ngOnInit(): void {
