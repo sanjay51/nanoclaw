@@ -6,7 +6,7 @@ homepage: https://github.com/users/sanjay51/projects/2/views/1
 
 # reco-code-assist
 
-Orchestrates the full RecoCards.com development pipeline: task pickup → implementation → code review → UX review → PR → notification. Delegates each phase to the appropriate specialist skill rather than doing the work directly.
+Orchestrates the full RecoCards.com development pipeline: task pickup → implementation → code review → UX review → PR → notification. Delegates to the shared code-assist module rather than duplicating logic.
 
 ## Product Context
 
@@ -14,25 +14,14 @@ Orchestrates the full RecoCards.com development pipeline: task pickup → implem
 - **Repository:** `/Users/sanjay/personal-workspace/recocards.com`
 - **GitHub Project Board:** https://github.com/users/sanjay51/projects/2/views/1
 - **Tech stack:** Angular (standalone components, signals, Tailwind), Firebase/Firestore, Stripe
-- **Convention file:** Always ensure Claude reads `CLAUDE.md` in the repo root before touching any code.
+- **Convention file:** Always ensure Claude reads `CLAUDE.md` in the repo root before touching any code
+- **Task source:** the GitHub Projects board above, filtered by **"Delegate to AI" = "Yes"**
 
 ## The Pipeline
 
-This skill runs five phases in strict order. Each phase must complete successfully before the next begins. If any phase fails or surfaces issues, fix them before moving on — never skip a phase.
-
-```
-┌─────────────┐    ┌──────────────┐    ┌───────────────┐    ┌────────────┐    ┌────────────┐
-│  1. PICK UP │ →  │ 2. IMPLEMENT │ →  │ 3. CODE REVIEW│ →  │ 4. UX TEST │ →  │ 5. SHIP IT │
-│  (GitHub)   │    │ (CODE-       │    │ (CODE-REVIEWER.md) │    │ (UX-       │    │ (PR + TG)  │
-│             │    │  AGENT.md)   │    │               │    │ REVIEWER.md│    │            │
-└─────────────┘    └──────────────┘    └───────────────┘    └────────────┘    └────────────┘
-```
-
----
+Five phases in strict order. Canonical phase instructions live in `../code-assist-shared/PIPELINE.md` — read it fresh each run. The Reco-specific wiring below overrides the defaults where noted.
 
 ### Phase 1: Pick Up a Task
-
-Query the GitHub Projects board for the next task to work on.
 
 **For new work:**
 1. Use `gh` CLI to read the project board at https://github.com/users/sanjay51/projects/2/views/1
@@ -40,113 +29,51 @@ Query the GitHub Projects board for the next task to work on.
 3. Among those, pick the **highest-priority task** (top of the list).
 4. If no tasks have "Delegate to AI" = Yes, reply `HEARTBEAT_OK` and stop.
 5. Set the task status to **"In Progress"** on the board.
-6. When a task is in Ready state, you should start from scratch on `recocards` branch and not look onto any existing branches or previous code.
+6. When a task is in Ready state, start from scratch on the `recocards` branch — do not look at existing branches or previous code.
 
-**For rework** (status is "Needs Rework" or "Check Comments"):
-1. Find the task with that status.
-2. Read feedback from ALL THREE sources — this is critical, don't skip any:
-   - PR conversation: `gh pr view <number> --comments`
-   - PR file comments: `gh api repos/{owner}/{repo}/pulls/{number}/comments`
-   - GitHub issue comments: `gh issue view <number> --comments`
-3. Compile every piece of feedback into a clear list for the implementation phase.
-
-**Output of this phase:** A clear task description, acceptance criteria, and (for rework) the full list of feedback to address.
+**For rework** — follow the shared PIPELINE.md Phase 1 rework rules (all three feedback sources).
 
 ---
 
-### Phase 2: Implement (follow CODE-AGENT.md)
+### Phase 2: Implement
 
-Read and follow the instructions in **CODE-AGENT.md** for the implementation work. Key rules:
-
-1. **Read `CLAUDE.md` in the repo root first** — always.
-2. **Fresh branch from main** for new tasks. Same branch for rework.
-3. **Build must pass** before moving on. If it fails, fix and re-run.
-4. **Stay on scope** — no unrelated changes. If you discover other issues, create new backlog items with "AI Created" = Yes.
-5. Clean up temp/debug files before proceeding.
-
-For rework: address every single piece of feedback from Phase 1.
+Follow `CODE-AGENT.md` in this skill folder (which extends `../code-assist-shared/CODE-AGENT-CORE.md`).
 
 ---
 
-### Phase 3: Code Review (use CODE-REVIEWER.md)
+### Phase 3: Code Review
 
-Run the 3-round mandatory self-review cycle:
+Run the 3-round self-review cycle against `../code-assist-shared/CODE-REVIEWER.md` (read fresh every time — the pattern list grows).
 
-- **Round 1 — Bugs & Logic:** Check against all 21 patterns in `CODE-REVIEWER.md`. Find bugs, logic flaws, edge cases, error handling gaps. Revert any out-of-scope changes.
-- **Round 2 — Security & Performance:** Injection, XSS, auth bypasses, N+1 queries, unnecessary re-renders. Verify every changed file is task-relevant.
-- **Round 3 — User Experience:** UX issues from a user's perspective — confusing flows, missing feedback, poor errors, accessibility. Final diff check — every changed line must be justified.
-
-Each round that finds issues → fix → re-run that round. All three rounds must pass clean before continuing.
-
-Also enforce: no duplicate code (reuse existing functions/components), no dead code, no test scripts left behind.
+All three rounds must pass clean. Also enforce: no duplicate code, no dead code, no test scripts left behind.
 
 ---
 
-### Phase 4: UX Review (follow UX-REVIEWER.md)
+### Phase 4: UX Review
 
-This phase only runs if the task touches UI. Skip it for backend-only or config-only changes.
+Runs if the task touches UI. Skip for backend-only or config-only changes.
 
-Read and follow **UX-REVIEWER.md** for the full visual inspection:
-
-1. Start the dev server if not already running.
-2. Open Chrome, navigate to the affected pages.
-3. Test across all 9 viewport sizes (320px → 2560px).
-4. Check: visual consistency, layout/spacing, responsiveness, interaction feedback, error/edge states, accessibility, user flow, loading performance.
-5. **Tailwind only** — flag any vanilla CSS, inline styles, or `<style>` blocks.
-6. Fix any issues found and re-test.
-7. Save final screenshots to `screenshots/` (delete old ones first).
+Follow `UX-REVIEWER.md` in this skill folder (which extends `../code-assist-shared/UX-REVIEWER-CORE.md`).
 
 ---
 
 ### Phase 5: Ship It
 
-Once all review phases pass:
-
-1. **Commit and push** all changes to the PR branch. If you didn't push, you didn't finish.
-2. **Create or update the PR** on GitHub with a clear title and description.
-3. **Set the task status** to **"In Review"** on the project board.
-4. **Add the PR link** to the task on the board.
-5. For rework: **reply to each feedback comment** on the PR/issue explaining what was changed.
-6. **Send the completion summary to Telegram** (see format below).
+Follow shared PIPELINE.md Phase 5. Reco-specific:
+- **Set the task status** to **"In Review"** on the project board.
+- **Add the PR link** to the task on the board.
 
 ---
 
 ## Completion Summary Format (Telegram)
 
-Send a single message covering the full pipeline run:
-
-```
-🚀 Task Complete: [Task Title]
-
-📋 Changes Made:
-- [Brief list of what changed — files, features, fixes]
-
-🔍 Code Review:
-- Round 1 (Bugs): [found/fixed or clean]
-- Round 2 (Security): [found/fixed or clean]
-- Round 3 (UX): [found/fixed or clean]
-
-🎨 UX Review: [findings or "No UX issues"]
-
-🔗 PR: [link]
-
-📸 [Attach final screenshot]
-```
+Use the format in `../code-assist-shared/PIPELINE.md`. Title: `🚀 Task Complete: [Task Title]`.
 
 ---
 
-## Handling Failures
+## Handling Failures & Guardrails
 
-- **Build fails:** Fix in Phase 2, don't proceed to review.
-- **Review finds issues:** Fix and re-run that review round. Don't proceed until clean.
-- **UX test finds issues:** Fix and re-test. Don't ship broken UI.
-- **Can't determine task scope:** Stop and ask Sanjay rather than guessing.
-- **Conflicting feedback:** Flag the conflict in the PR comment and ask for clarification.
-
-## Important Guardrails
-
-- **Never skip phases.** The pipeline exists because each phase catches different problems.
+See `../code-assist-shared/PIPELINE.md` for the full failure matrix and guardrails. Reco-specific additions:
 - **Never mark a task "In Review" if the build is broken or reviews haven't passed.**
-- **CODE-AGENT.md, CODE-REVIEWER.md, and UX-REVIEWER.md contain detailed instructions** — read them fresh for each task. Don't rely on memory of their contents.
-- **CODE-REVIEWER.md must be read fresh every time** during code review rounds. The pattern list grows over time.
+- **CODE-AGENT.md, CODE-REVIEWER.md, and UX-REVIEWER.md contain detailed instructions** — read them fresh for each task.
 - **Screenshots directory gets wiped per task** — only the current task's screenshots should exist.
