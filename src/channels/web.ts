@@ -209,6 +209,7 @@ export class WebChannel implements Channel {
 
     // Route matching
     const taskLogMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/logs$/);
+    const taskRunMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/run$/);
     const taskMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
     const groupMsgMatch = url.pathname.match(
       /^\/api\/groups\/([^/]+)\/messages$/,
@@ -250,6 +251,8 @@ export class WebChannel implements Channel {
       this.handleCreateTask(req, res);
     } else if (taskLogMatch && req.method === 'GET') {
       this.handleGetTaskLogs(taskLogMatch[1], url, res);
+    } else if (taskRunMatch && req.method === 'POST') {
+      this.handleRunTaskNow(taskRunMatch[1], res);
     } else if (taskMatch && req.method === 'GET') {
       this.handleGetTask(taskMatch[1], res);
     } else if (taskMatch && req.method === 'PATCH') {
@@ -674,6 +677,28 @@ export class WebChannel implements Channel {
     const logs = getTaskRunLogs(id, limit);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(logs));
+  }
+
+  private handleRunTaskNow(id: string, res: http.ServerResponse): void {
+    const task = getTaskById(id);
+    if (!task) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Task not found' }));
+      return;
+    }
+    if (task.status === 'paused') {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          error: 'Task is paused — resume it first to run',
+        }),
+      );
+      return;
+    }
+    updateTask(id, { next_run: new Date().toISOString() });
+    nudgeScheduler();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
   }
 
   // ---- Session endpoints ----
@@ -1947,6 +1972,184 @@ function buildHTML(): string {
     color: var(--text-muted);
   }
 
+  .icon-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px 9px;
+    font-size: 15px;
+    line-height: 1;
+    font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+  }
+  .icon-btn:hover { background: var(--surface2); color: var(--text); }
+
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title > span { flex: 1; }
+
+  .section-action {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0 4px;
+    line-height: 1;
+    transition: color 0.15s;
+  }
+  .section-action:hover { color: var(--accent-hover); text-decoration: underline; }
+
+  /* ---- New task form: mode tabs ---- */
+  .mode-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+  }
+  .mode-tab {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .mode-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .mode-tab:hover:not(.active) { color: var(--text); }
+
+  .preset-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .preset-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .preset-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .preset-btn:hover:not(.active) { background: var(--border); color: var(--text); }
+
+  .time-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .time-row label { font-size: 12px; color: var(--text-dim); }
+  .time-row input[type="time"],
+  .time-row input[type="datetime-local"],
+  .time-row select {
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+
+  /* ---- Task detail: chat-style run log ---- */
+  .task-chat-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--surface2);
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .task-chat-header .prompt {
+    flex: 1;
+    min-width: 200px;
+    font-size: 13px;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.4;
+  }
+  .task-chat-header .schedule {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  .run-log {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .run-bubble {
+    background: var(--bot-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    max-width: 80%;
+    align-self: flex-start;
+  }
+  .run-bubble.error { border-color: rgba(239,68,68,0.4); }
+  .run-bubble-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .run-bubble-meta .badge { font-size: 10px; padding: 1px 6px; }
+  .run-bubble-body {
+    font-size: 13px;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.5;
+  }
+  .run-bubble-body code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--surface2);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+  .task-config-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 6px 12px;
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+  .task-config-toggle:hover { background: var(--surface2); color: var(--text); }
+  .task-config { display: none; }
+  .task-config.visible { display: block; }
+
   .toast {
     position: fixed;
     bottom: 20px;
@@ -1978,7 +2181,7 @@ function buildHTML(): string {
   <div class="sidebar-header">
     <h1>${ASSISTANT_NAME}</h1>
     <div class="spacer"></div>
-    <span class="version">NanoClaw</span>
+    <button class="icon-btn" id="global-new-task" title="New task">+</button>
     <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark theme">&#9788;</button>
   </div>
 
@@ -1997,7 +2200,10 @@ function buildHTML(): string {
   <div class="divider"></div>
 
   <div class="section" id="sec-tasks">
-    <div class="section-title">Scheduled Tasks</div>
+    <div class="section-title">
+      <span>Scheduled Tasks</span>
+      <button class="section-action" id="tasks-new-task" title="New task">+ New</button>
+    </div>
     <div id="task-list"><div class="empty-hint">Loading...</div></div>
   </div>
 
@@ -2247,68 +2453,126 @@ function buildHTML(): string {
     showDetail(ch.name.charAt(0).toUpperCase() + ch.name.slice(1) + ' Channel', html);
   }
 
-  // ---- Task detail / edit panel ----
+  // ---- Task detail / chat-style run log ----
+
+  function humanSchedule(type, value) {
+    if (type === 'once') {
+      const d = new Date(value);
+      if (!isNaN(d.getTime())) return 'Once at ' + d.toLocaleString();
+      return 'Once: ' + value;
+    }
+    if (type === 'interval') {
+      const ms = parseInt(value, 10);
+      if (!isNaN(ms)) return 'Every ' + humanDuration(ms);
+      return 'Interval: ' + value;
+    }
+    if (type === 'cron') {
+      const parts = (value || '').trim().split(/\\s+/);
+      if (parts.length === 5) {
+        const [m, h, dom, mon, dow] = parts;
+        if (m === '0' && h === '*' && dom === '*' && mon === '*' && dow === '*') return 'Every hour';
+        if (dom === '*' && mon === '*' && dow === '*' && /^\\d+$/.test(m) && /^\\d+$/.test(h)) {
+          return 'Daily at ' + h.padStart(2, '0') + ':' + m.padStart(2, '0');
+        }
+        if (dom === '*' && mon === '*' && /^\\d+$/.test(dow) && /^\\d+$/.test(m) && /^\\d+$/.test(h)) {
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          return 'Weekly on ' + (days[parseInt(dow, 10)] || dow) + ' at ' + h.padStart(2, '0') + ':' + m.padStart(2, '0');
+        }
+      }
+      return 'Cron: ' + value;
+    }
+    return type + ': ' + value;
+  }
 
   function showTaskDetail(task) {
+    const scheduleStr = humanSchedule(task.type, task.value);
+    const nextStr = task.nextRun ? ' &middot; next ' + relTime(task.nextRun) : '';
+
     const html =
-      '<div class="detail-section">' +
-        '<h3>Task Details</h3>' +
-        '<div class="detail-field">' +
-          '<label>Prompt</label>' +
-          '<textarea id="edit-prompt">' + esc(task.prompt) + '</textarea>' +
+      '<div class="task-chat-header">' +
+        '<div class="prompt">' + esc(task.prompt) + '</div>' +
+        '<span class="badge ' + task.status + '">' + task.status + '</span>' +
+        '<span class="schedule">' + esc(scheduleStr) + nextStr + '</span>' +
+      '</div>' +
+      '<div class="detail-actions" style="margin-bottom:14px;">' +
+        '<button class="btn primary" id="run-now">Run Now</button>' +
+        (task.status === 'active'
+          ? '<button class="btn" id="pause-task">Pause</button>'
+          : task.status === 'paused'
+          ? '<button class="btn" id="resume-task">Resume</button>'
+          : '') +
+        '<button class="task-config-toggle" id="toggle-config">Edit configuration</button>' +
+      '</div>' +
+      '<div class="task-config" id="task-config">' +
+        '<div class="detail-section">' +
+          '<div class="detail-field">' +
+            '<label>Prompt</label>' +
+            '<textarea id="edit-prompt">' + esc(task.prompt) + '</textarea>' +
+          '</div>' +
+          '<div class="detail-field">' +
+            '<label>Schedule Type</label>' +
+            '<select id="edit-type">' +
+              '<option value="cron"' + (task.type === 'cron' ? ' selected' : '') + '>Cron</option>' +
+              '<option value="interval"' + (task.type === 'interval' ? ' selected' : '') + '>Interval (ms)</option>' +
+              '<option value="once"' + (task.type === 'once' ? ' selected' : '') + '>Once</option>' +
+            '</select>' +
+          '</div>' +
+          '<div class="detail-field">' +
+            '<label>Schedule Value</label>' +
+            '<input id="edit-value" type="text" value="' + esc(task.value) + '">' +
+          '</div>' +
+          '<div class="detail-actions">' +
+            '<button class="btn primary" id="save-task">Save Changes</button>' +
+            '<button class="btn danger" id="delete-task">Delete Task</button>' +
+          '</div>' +
         '</div>' +
-        '<div class="detail-field">' +
-          '<label>Schedule Type</label>' +
-          '<select id="edit-type">' +
-            '<option value="cron"' + (task.type === 'cron' ? ' selected' : '') + '>Cron</option>' +
-            '<option value="interval"' + (task.type === 'interval' ? ' selected' : '') + '>Interval (ms)</option>' +
-            '<option value="once"' + (task.type === 'once' ? ' selected' : '') + '>Once</option>' +
-          '</select>' +
-        '</div>' +
-        '<div class="detail-field">' +
-          '<label>Schedule Value</label>' +
-          '<input id="edit-value" type="text" value="' + esc(task.value) + '">' +
-        '</div>' +
-        '<div class="detail-field">' +
-          '<label>Status</label>' +
-          '<select id="edit-status">' +
-            '<option value="active"' + (task.status === 'active' ? ' selected' : '') + '>Active</option>' +
-            '<option value="paused"' + (task.status === 'paused' ? ' selected' : '') + '>Paused</option>' +
-          '</select>' +
+        '<div class="detail-section">' +
+          '<h3>Info</h3>' +
+          '<div class="detail-field"><label>ID</label><div class="value mono">' + esc(task.id) + '</div></div>' +
+          '<div class="detail-field"><label>Group</label><div class="value">' + esc(task.group) + '</div></div>' +
+          '<div class="detail-field"><label>Context Mode</label><div class="value">' + esc(task.contextMode || 'isolated') + '</div></div>' +
         '</div>' +
       '</div>' +
       '<div class="detail-section">' +
-        '<h3>Info</h3>' +
-        '<div class="detail-field">' +
-          '<label>ID</label>' +
-          '<div class="value mono">' + esc(task.id) + '</div>' +
-        '</div>' +
-        '<div class="detail-field">' +
-          '<label>Group</label>' +
-          '<div class="value">' + esc(task.group) + '</div>' +
-        '</div>' +
-        '<div class="detail-field">' +
-          '<label>Context Mode</label>' +
-          '<div class="value">' + esc(task.contextMode || 'isolated') + '</div>' +
-        '</div>' +
-        (task.nextRun ? '<div class="detail-field"><label>Next Run</label><div class="value">' + esc(new Date(task.nextRun).toLocaleString()) + ' (' + relTime(task.nextRun) + ')</div></div>' : '') +
-        (task.lastRun ? '<div class="detail-field"><label>Last Run</label><div class="value">' + relTime(task.lastRun) + '</div></div>' : '') +
-        (task.lastResult ? '<div class="detail-field"><label>Last Result</label><div class="value mono" style="white-space:pre-wrap;max-height:120px;overflow:auto;">' + esc(task.lastResult) + '</div></div>' : '') +
-      '</div>' +
-      '<div class="detail-actions">' +
-        '<button class="btn primary" id="save-task">Save Changes</button>' +
-        '<button class="btn danger" id="delete-task">Delete Task</button>' +
+        '<h3>Run History</h3>' +
+        '<div class="run-log" id="run-log"><div class="empty-hint">Loading...</div></div>' +
       '</div>';
 
-    showDetail('Edit Task', html);
+    showDetail(task.prompt.length > 40 ? task.prompt.slice(0, 40) + '...' : task.prompt, html);
 
-    // Wire up save
+    // Toggle config
+    const configEl = document.getElementById('task-config');
+    document.getElementById('toggle-config').addEventListener('click', () => {
+      configEl.classList.toggle('visible');
+    });
+
+    // Run Now
+    document.getElementById('run-now').addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/tasks/' + encodeURIComponent(task.id) + '/run', { method: 'POST' });
+        if (res.ok) {
+          toast('Queued — scheduler will pick this up shortly');
+          refreshSidebar();
+          setTimeout(() => loadRunLog(task.id), 3000);
+        } else {
+          const err = await res.json().catch(() => ({}));
+          toast(err.error || 'Could not queue run', true);
+        }
+      } catch { toast('Network error', true); }
+    });
+
+    // Pause / Resume
+    const pauseBtn = document.getElementById('pause-task');
+    const resumeBtn = document.getElementById('resume-task');
+    if (pauseBtn) pauseBtn.addEventListener('click', () => setTaskStatus(task.id, 'paused'));
+    if (resumeBtn) resumeBtn.addEventListener('click', () => setTaskStatus(task.id, 'active'));
+
+    // Save config
     document.getElementById('save-task').addEventListener('click', async () => {
       const body = {
         prompt: document.getElementById('edit-prompt').value,
         schedule_type: document.getElementById('edit-type').value,
         schedule_value: document.getElementById('edit-value').value,
-        status: document.getElementById('edit-status').value,
       };
       try {
         const res = await fetch('/api/tasks/' + encodeURIComponent(task.id), {
@@ -2326,7 +2590,7 @@ function buildHTML(): string {
       } catch { toast('Network error', true); }
     });
 
-    // Wire up delete
+    // Delete
     document.getElementById('delete-task').addEventListener('click', async () => {
       if (!confirm('Delete this task? This cannot be undone.')) return;
       try {
@@ -2337,6 +2601,257 @@ function buildHTML(): string {
           refreshSidebar();
         } else {
           toast('Delete failed', true);
+        }
+      } catch { toast('Network error', true); }
+    });
+
+    loadRunLog(task.id);
+  }
+
+  async function setTaskStatus(id, status) {
+    try {
+      const res = await fetch('/api/tasks/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (res.ok) {
+        toast('Task ' + (status === 'paused' ? 'paused' : 'resumed'));
+        refreshSidebar();
+        const task = (statusData.tasks || []).find(t => t.id === id);
+        if (task) { task.status = status; showTaskDetail(task); }
+      } else { toast('Update failed', true); }
+    } catch { toast('Network error', true); }
+  }
+
+  async function loadRunLog(id) {
+    const el = document.getElementById('run-log');
+    if (!el) return;
+    try {
+      const res = await fetch('/api/tasks/' + encodeURIComponent(id) + '/logs?limit=20');
+      if (!res.ok) { el.innerHTML = '<div class="empty-hint">Could not load history</div>'; return; }
+      const logs = await res.json();
+      if (!logs.length) { el.innerHTML = '<div class="empty-hint">No runs yet. Click Run Now to trigger one.</div>'; return; }
+      el.innerHTML = logs.map(l => {
+        const cls = l.status === 'error' ? 'run-bubble error' : 'run-bubble';
+        const body = l.result || l.error || '(no output)';
+        const dur = l.duration_ms != null ? humanDuration(l.duration_ms) : '';
+        return '<div class="' + cls + '">' +
+          '<div class="run-bubble-meta">' +
+            '<span>' + esc(new Date(l.run_at).toLocaleString()) + '</span>' +
+            (dur ? '<span>&middot; ' + esc(dur) + '</span>' : '') +
+            '<span class="badge ' + esc(l.status) + '">' + esc(l.status) + '</span>' +
+          '</div>' +
+          '<div class="run-bubble-body">' + renderMarkdown(body) + '</div>' +
+        '</div>';
+      }).join('');
+    } catch {
+      el.innerHTML = '<div class="empty-hint">Could not load history</div>';
+    }
+  }
+
+  // ---- New task form ----
+
+  async function showNewTaskForm() {
+    let groups = [];
+    try {
+      const res = await fetch('/api/groups');
+      if (res.ok) groups = await res.json();
+    } catch {}
+
+    if (!groups.length) {
+      showDetail('New Task', '<div class="empty-hint">No groups registered. Register a group first.</div>');
+      return;
+    }
+
+    const groupOpts = groups.map(g =>
+      '<option value="' + esc(g.folder) + '" data-jid="' + esc(g.jid) + '">' +
+        esc(g.name) + ' (' + esc(g.folder) + ')' +
+      '</option>'
+    ).join('');
+
+    // Default datetime: now + 5 minutes, local timezone, formatted for <input type="datetime-local">
+    const soon = new Date(Date.now() + 5 * 60 * 1000);
+    const pad = n => String(n).padStart(2, '0');
+    const localSoon = soon.getFullYear() + '-' + pad(soon.getMonth() + 1) + '-' + pad(soon.getDate()) +
+      'T' + pad(soon.getHours()) + ':' + pad(soon.getMinutes());
+
+    const html =
+      '<div class="mode-tabs">' +
+        '<button class="mode-tab active" data-mode="once">One-off</button>' +
+        '<button class="mode-tab" data-mode="recurring">Recurring</button>' +
+      '</div>' +
+
+      '<div class="detail-field">' +
+        '<label>What should ' + esc('${ASSISTANT_NAME}') + ' do?</label>' +
+        '<textarea id="nt-prompt" placeholder="e.g. Summarize my unread emails and send the summary"></textarea>' +
+      '</div>' +
+
+      '<div class="detail-field">' +
+        '<label>Group</label>' +
+        '<select id="nt-group">' + groupOpts + '</select>' +
+      '</div>' +
+
+      // One-off mode pane
+      '<div class="detail-field mode-pane" id="pane-once">' +
+        '<label>When</label>' +
+        '<div class="time-row">' +
+          '<label><input type="radio" name="nt-when" value="now" checked> Run now</label>' +
+          '<label><input type="radio" name="nt-when" value="later"> At:</label>' +
+          '<input type="datetime-local" id="nt-once-at" value="' + localSoon + '" disabled>' +
+        '</div>' +
+        '<div class="hint">One-off tasks run once, then stop. Scheduler checks every 60s.</div>' +
+      '</div>' +
+
+      // Recurring mode pane (hidden initially)
+      '<div class="detail-field mode-pane" id="pane-recurring" style="display:none;">' +
+        '<label>How often</label>' +
+        '<div class="preset-row" id="nt-presets">' +
+          '<button type="button" class="preset-btn active" data-preset="hourly">Every hour</button>' +
+          '<button type="button" class="preset-btn" data-preset="daily">Daily</button>' +
+          '<button type="button" class="preset-btn" data-preset="weekly">Weekly</button>' +
+          '<button type="button" class="preset-btn" data-preset="custom">Custom cron</button>' +
+        '</div>' +
+
+        '<div class="time-row" id="preset-daily" style="display:none;">' +
+          '<label>At</label>' +
+          '<input type="time" id="nt-daily-time" value="09:00">' +
+        '</div>' +
+
+        '<div class="time-row" id="preset-weekly" style="display:none;">' +
+          '<label>On</label>' +
+          '<select id="nt-weekly-dow">' +
+            '<option value="0">Sunday</option>' +
+            '<option value="1" selected>Monday</option>' +
+            '<option value="2">Tuesday</option>' +
+            '<option value="3">Wednesday</option>' +
+            '<option value="4">Thursday</option>' +
+            '<option value="5">Friday</option>' +
+            '<option value="6">Saturday</option>' +
+          '</select>' +
+          '<label>at</label>' +
+          '<input type="time" id="nt-weekly-time" value="09:00">' +
+        '</div>' +
+
+        '<div class="detail-field" id="preset-custom" style="display:none;margin-top:8px;">' +
+          '<input type="text" id="nt-cron" placeholder="0 9 * * *" value="0 * * * *">' +
+          '<div class="hint">Standard 5-field cron: minute hour dom month dow</div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="detail-field">' +
+        '<label>Context Mode</label>' +
+        '<div class="time-row">' +
+          '<label><input type="radio" name="nt-ctx" value="isolated" checked> Isolated (fresh context each run)</label>' +
+          '<label><input type="radio" name="nt-ctx" value="group"> Group (share group conversation)</label>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="detail-actions">' +
+        '<button class="btn primary" id="nt-create">Create Task</button>' +
+        '<button class="btn" id="nt-cancel">Cancel</button>' +
+      '</div>';
+
+    showDetail('New Task', html);
+
+    // Mode tab switching
+    let mode = 'once';
+    document.querySelectorAll('.mode-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        mode = btn.dataset.mode;
+        document.querySelectorAll('.mode-tab').forEach(b => b.classList.toggle('active', b === btn));
+        document.getElementById('pane-once').style.display = mode === 'once' ? '' : 'none';
+        document.getElementById('pane-recurring').style.display = mode === 'recurring' ? '' : 'none';
+      });
+    });
+
+    // One-off "at" radio toggles datetime input
+    document.querySelectorAll('input[name="nt-when"]').forEach(r => {
+      r.addEventListener('change', () => {
+        document.getElementById('nt-once-at').disabled = document.querySelector('input[name="nt-when"]:checked').value === 'now';
+      });
+    });
+
+    // Recurring presets
+    let preset = 'hourly';
+    document.querySelectorAll('#nt-presets .preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        preset = btn.dataset.preset;
+        document.querySelectorAll('#nt-presets .preset-btn').forEach(b => b.classList.toggle('active', b === btn));
+        document.getElementById('preset-daily').style.display = preset === 'daily' ? '' : 'none';
+        document.getElementById('preset-weekly').style.display = preset === 'weekly' ? '' : 'none';
+        document.getElementById('preset-custom').style.display = preset === 'custom' ? '' : 'none';
+      });
+    });
+
+    // Cancel
+    document.getElementById('nt-cancel').addEventListener('click', showChat);
+
+    // Create
+    document.getElementById('nt-create').addEventListener('click', async () => {
+      const promptText = document.getElementById('nt-prompt').value.trim();
+      if (!promptText) { toast('Please enter a prompt', true); return; }
+
+      const groupSelect = document.getElementById('nt-group');
+      const selectedOpt = groupSelect.options[groupSelect.selectedIndex];
+      const groupFolder = groupSelect.value;
+      const chatJid = selectedOpt.dataset.jid;
+      const contextMode = document.querySelector('input[name="nt-ctx"]:checked').value;
+
+      let schedule_type, schedule_value;
+
+      if (mode === 'once') {
+        schedule_type = 'once';
+        const when = document.querySelector('input[name="nt-when"]:checked').value;
+        if (when === 'now') {
+          schedule_value = new Date().toISOString();
+        } else {
+          const raw = document.getElementById('nt-once-at').value;
+          if (!raw) { toast('Pick a date/time', true); return; }
+          schedule_value = new Date(raw).toISOString();
+        }
+      } else {
+        schedule_type = 'cron';
+        if (preset === 'hourly') {
+          schedule_value = '0 * * * *';
+        } else if (preset === 'daily') {
+          const t = document.getElementById('nt-daily-time').value || '09:00';
+          const [h, m] = t.split(':');
+          schedule_value = parseInt(m, 10) + ' ' + parseInt(h, 10) + ' * * *';
+        } else if (preset === 'weekly') {
+          const t = document.getElementById('nt-weekly-time').value || '09:00';
+          const [h, m] = t.split(':');
+          const dow = document.getElementById('nt-weekly-dow').value;
+          schedule_value = parseInt(m, 10) + ' ' + parseInt(h, 10) + ' * * ' + dow;
+        } else {
+          schedule_value = document.getElementById('nt-cron').value.trim();
+          if (!schedule_value) { toast('Enter a cron expression', true); return; }
+        }
+      }
+
+      try {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: promptText,
+            group_folder: groupFolder,
+            chat_jid: chatJid,
+            schedule_type,
+            schedule_value,
+            context_mode: contextMode,
+          }),
+        });
+        if (res.ok) {
+          const created = await res.json();
+          toast('Task created');
+          await refreshSidebar();
+          const t = (statusData.tasks || []).find(x => x.id === created.id);
+          if (t) showTaskDetail(t);
+          else showChat();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          toast(err.error || 'Create failed', true);
         }
       } catch { toast('Network error', true); }
     });
@@ -2425,6 +2940,10 @@ function buildHTML(): string {
 
   refreshSidebar();
   setInterval(refreshSidebar, 10000);
+
+  // ---- New-task entry points ----
+  document.getElementById('global-new-task').addEventListener('click', showNewTaskForm);
+  document.getElementById('tasks-new-task').addEventListener('click', showNewTaskForm);
 
   // ---- Theme toggle ----
   const themeBtn = document.getElementById('theme-toggle');
