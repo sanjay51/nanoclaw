@@ -8,13 +8,13 @@ import { relTime } from '../../shared/utils';
   selector: 'app-groups',
   standalone: true,
   template: `
-    <div class="px-6 py-4 border-b border-border bg-surface flex items-center gap-3">
-      <h2 class="text-lg font-semibold">Channels</h2>
+    <div class="flex items-center gap-3 mb-4">
+      <h3 class="font-serif text-xl text-zinc-200">Registered Groups</h3>
       <div class="ml-auto">
-        <button (click)="router.navigate(['/groups/register'])" class="px-3 py-1.5 rounded bg-accent text-white text-sm font-medium hover:bg-accent-hover">+ Register Channel</button>
+        <button (click)="router.navigate(['/groups/register'])" class="px-3 py-1.5 rounded-full bg-accent text-white text-[13px] font-medium hover:bg-accent-hover">+ Register Channel</button>
       </div>
     </div>
-    <div class="p-6 overflow-y-auto flex-1">
+    <div class="rounded-2xl border border-border bg-surface overflow-hidden">
       @if (groups().length) {
         <table class="w-full text-sm">
           <thead><tr class="text-xs text-zinc-500 uppercase tracking-wider">

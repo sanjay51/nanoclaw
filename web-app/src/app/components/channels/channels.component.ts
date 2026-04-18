@@ -8,19 +8,22 @@ import { SystemComponent } from '../system/system.component';
   standalone: true,
   imports: [DashboardComponent, GroupsComponent, SystemComponent],
   template: `
-    <div class="px-6 py-4 border-b border-border bg-surface flex items-center gap-3">
-      <h2 class="text-lg font-semibold">Channels</h2>
-    </div>
     <div class="overflow-y-auto flex-1">
-      <section class="channels-section">
-        <app-dashboard></app-dashboard>
-      </section>
-      <section class="channels-section border-t border-border">
-        <app-groups></app-groups>
-      </section>
-      <section class="channels-section border-t border-border">
-        <app-system></app-system>
-      </section>
+      <div class="max-w-5xl mx-auto px-6 pt-14 pb-20">
+        <div class="mb-8">
+          <h1 class="font-serif text-4xl tracking-tight text-zinc-200">Channels</h1>
+          <p class="text-[13px] text-zinc-500 mt-1">Your messaging channels, registered groups, and system status.</p>
+        </div>
+        <section class="channels-section mb-8">
+          <app-dashboard></app-dashboard>
+        </section>
+        <section class="channels-section mb-8">
+          <app-groups></app-groups>
+        </section>
+        <section class="channels-section">
+          <app-system></app-system>
+        </section>
+      </div>
     </div>
   `,
   styles: [`

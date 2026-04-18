@@ -9,11 +9,16 @@ import { CredentialItem } from '../../shared/types';
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="px-6 py-4 border-b border-border bg-surface flex items-center justify-between">
-      <h2 class="text-lg font-semibold">Credentials</h2>
-      <button (click)="startCreate()" class="px-3 py-1.5 rounded bg-accent text-white text-sm font-medium hover:bg-accent-hover">+ Add Credential</button>
-    </div>
-    <div class="p-6 overflow-y-auto flex-1 space-y-6">
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-5xl mx-auto px-6 pt-14 pb-20">
+        <div class="flex items-end justify-between mb-8">
+          <div>
+            <h1 class="font-serif text-4xl tracking-tight text-zinc-200">Credentials</h1>
+            <p class="text-[13px] text-zinc-500 mt-1">Stored logins and tokens.</p>
+          </div>
+          <button (click)="startCreate()" class="px-4 py-2 rounded-full bg-accent text-white text-sm font-medium hover:bg-accent-hover">+ Add Credential</button>
+        </div>
+        <div class="space-y-6">
       @if (editing()) {
         <section class="border border-border rounded-lg p-5 bg-surface max-w-2xl">
           <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-3">{{ editId ? 'Update' : 'New' }} Credential</h3>
@@ -82,6 +87,8 @@ import { CredentialItem } from '../../shared/types';
           }
         </div>
       }
+        </div>
+      </div>
     </div>
   `,
 })

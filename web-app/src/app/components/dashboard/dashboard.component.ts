@@ -8,11 +8,11 @@ import { GroupNamesPipe } from '../../shared/pipes';
   standalone: true,
   imports: [GroupNamesPipe],
   template: `
-    <div class="px-6 py-4 border-b border-border bg-surface flex items-center gap-3">
-      <h2 class="text-lg font-semibold">Dashboard</h2>
-      <span class="ml-auto text-xs text-zinc-500">Auto-refreshes every 10s</span>
+    <div class="flex items-center gap-3 mb-4">
+      <h3 class="font-serif text-xl text-zinc-200">Dashboard</h3>
+      <span class="ml-auto text-[11px] text-zinc-500">Auto-refreshes every 10s</span>
     </div>
-    <div class="p-6 overflow-y-auto flex-1">
+    <div>
       @if (status.status(); as s) {
         <!-- Stat cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

@@ -31,7 +31,7 @@ interface Section {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
           </button>
         }
-        <h2 class="text-lg font-semibold">{{ editing() ? (editId ? 'Edit Personality' : 'New Personality') : 'Personalities' }}</h2>
+        <h2 class="font-serif text-2xl tracking-tight">{{ editing() ? (editId ? 'Edit Personality' : 'New Personality') : 'Personalities' }}</h2>
         @if (editing()) {
           <span class="text-zinc-500 text-sm">—</span>
           <input [(ngModel)]="editName" placeholder="Personality name" class="px-2 py-1 rounded border border-border bg-zinc-950 text-sm outline-none focus:border-accent w-48">

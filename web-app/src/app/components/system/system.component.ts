@@ -9,10 +9,10 @@ import { relTime } from '../../shared/utils';
   selector: 'app-system',
   standalone: true,
   template: `
-    <div class="px-6 py-4 border-b border-border bg-surface">
-      <h2 class="text-lg font-semibold">System</h2>
+    <div class="mb-4">
+      <h3 class="font-serif text-xl text-zinc-200">System</h3>
     </div>
-    <div class="p-6 overflow-y-auto flex-1 space-y-6">
+    <div class="space-y-6">
       <!-- Channels -->
       <section>
         <h3 class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2 pb-1.5 border-b border-border">Channels</h3>

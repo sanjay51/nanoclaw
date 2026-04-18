@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { LowerCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
 import { AuthService } from './services/auth.service';
@@ -15,7 +16,7 @@ import { relTime } from './shared/utils';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule, ConnectComponent, ToastComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, FormsModule, LowerCasePipe, ConnectComponent, ToastComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })
@@ -33,11 +34,11 @@ export class AppComponent implements OnInit {
   editingName = '';
 
   navItems = [
-    { path: '/chat', label: 'Chat', icon: '\u2709' },
-    { path: '/groups', label: 'Channels', icon: '\u2605' },
-    { path: '/tasks', label: 'Tasks', icon: '\u23F0' },
-    { path: '/personalities', label: 'Personalities', icon: '\u2728' },
-    { path: '/credentials', label: 'Credentials', icon: '\uD83D\uDD12' },
+    { path: '/chat', label: 'Chat' },
+    { path: '/groups', label: 'Channels' },
+    { path: '/tasks', label: 'Tasks' },
+    { path: '/personalities', label: 'Personalities' },
+    { path: '/credentials', label: 'Credentials' },
   ];
 
   ngOnInit(): void {

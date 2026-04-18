@@ -9,30 +9,34 @@ import { StatusService } from '../../services/status.service';
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="flex items-center justify-center w-full h-screen">
-      <div class="bg-surface border border-border rounded-xl p-8 w-96 max-w-[90vw]">
-        <h1 class="text-xl font-bold tracking-tight mb-1">Romi 🐕</h1>
-        <p class="text-sm text-zinc-500 mb-6">Connect to your NanoClaw instance</p>
-        <form (ngSubmit)="connect()">
-          <div class="mb-4">
-            <label class="block text-xs font-medium text-zinc-500 mb-1.5">Endpoint URL</label>
+    <div class="flex items-center justify-center w-full h-screen px-4">
+      <div class="w-full max-w-md">
+        <div class="flex items-center gap-2 mb-10">
+          <span class="text-2xl">🐕</span>
+          <span class="font-serif text-2xl tracking-tight">romi</span>
+        </div>
+        <h1 class="font-serif text-4xl leading-tight tracking-tight mb-2">Connect.</h1>
+        <p class="text-[14px] text-zinc-500 mb-8">Paste your NanoClaw endpoint and API token.</p>
+        <form (ngSubmit)="connect()" class="space-y-4">
+          <div>
+            <label class="block text-[11px] uppercase tracking-wider font-medium text-zinc-500 mb-1.5">Endpoint URL</label>
             <input [(ngModel)]="endpoint" name="endpoint" type="text" placeholder="http://192.168.1.100:3456"
-                   class="w-full px-3 py-2.5 rounded-md border border-border bg-zinc-950 text-zinc-200 text-sm outline-none focus:border-accent">
+                   class="w-full px-4 py-3 rounded-xl border border-border bg-surface text-[14px] outline-none focus:border-zinc-500 transition-colors">
           </div>
-          <div class="mb-4">
-            <label class="block text-xs font-medium text-zinc-500 mb-1.5">API Token</label>
+          <div>
+            <label class="block text-[11px] uppercase tracking-wider font-medium text-zinc-500 mb-1.5">API Token</label>
             <input [(ngModel)]="token" name="token" type="password" placeholder="Your API token"
-                   class="w-full px-3 py-2.5 rounded-md border border-border bg-zinc-950 text-zinc-200 text-sm outline-none focus:border-accent">
+                   class="w-full px-4 py-3 rounded-xl border border-border bg-surface text-[14px] outline-none focus:border-zinc-500 transition-colors">
           </div>
           <button type="submit" [disabled]="loading"
-                  class="w-full py-2.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-40 transition-colors">
-            {{ loading ? 'Connecting...' : 'Connect' }}
+                  class="w-full py-3 rounded-full bg-accent text-white text-[14px] font-medium hover:bg-accent-hover disabled:opacity-40 transition-colors">
+            {{ loading ? 'Connecting…' : 'Connect' }}
           </button>
-          <label class="flex items-center gap-2 mt-3 text-sm text-zinc-500 cursor-pointer">
-            <input type="checkbox" [(ngModel)]="remember" name="remember" class="accent-blue-500"> Remember connection
+          <label class="flex items-center gap-2 text-[13px] text-zinc-500 cursor-pointer">
+            <input type="checkbox" [(ngModel)]="remember" name="remember"> Remember connection
           </label>
           @if (error) {
-            <div class="mt-3 px-3 py-2 rounded-md bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{{ error }}</div>
+            <div class="px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-red-600 text-[13px]">{{ error }}</div>
           }
         </form>
       </div>
