@@ -1,4 +1,132 @@
 <section class="flex-1 flex flex-col min-w-0 min-h-0 h-full">
+
+  <!-- Schedule bar -->
+  <div class="px-6 pt-3 pb-2 flex items-center gap-2 flex-wrap shrink-0 text-[12px]">
+    @if (attachedTask(); as t) {
+      <button (click)="openScheduleEditor()"
+        class="px-2.5 py-1 rounded-full border border-border bg-surface text-zinc-500 hover:text-zinc-900 hover:border-zinc-600 flex items-center gap-1.5">
+        <span>⏰</span>
+        <span>{{ scheduleSummary() }}</span>
+        <span class="text-[10px] opacity-70">✎</span>
+      </button>
+      @if (t.status === 'paused') {
+        <span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[11px]">paused</span>
+      }
+      <button (click)="schedRunNow()" [disabled]="schedRunning() || t.status === 'paused'"
+        class="px-2.5 py-1 rounded-full border border-border text-zinc-500 hover:text-zinc-900 hover:border-zinc-600 disabled:opacity-40">
+        {{ schedRunning() ? 'Queuing…' : 'Run now' }}
+      </button>
+      <button (click)="togglePause()"
+        class="px-2.5 py-1 rounded-full border border-border text-zinc-500 hover:text-zinc-900 hover:border-zinc-600">
+        {{ t.status === 'paused' ? 'Resume' : 'Pause' }}
+      </button>
+      @if (t.nextRun) {
+        <span class="text-zinc-500 text-[11px]">next {{ rel(t.nextRun) }}</span>
+      }
+    } @else {
+      <button (click)="openScheduleEditor()"
+        class="px-2.5 py-1 rounded-full border border-dashed border-zinc-500 text-zinc-500 hover:text-zinc-900 hover:border-zinc-600 flex items-center gap-1.5">
+        <span>⏰</span>
+        <span>+ Schedule</span>
+      </button>
+      <span class="text-zinc-500 text-[11px]">Attach a recurring or one-off instruction to this chat.</span>
+    }
+  </div>
+
+  <!-- Schedule editor (expanded) -->
+  @if (scheduleOpen()) {
+    <div class="mx-6 mb-2 p-4 rounded-xl border border-border bg-surface space-y-3 text-sm">
+      <div>
+        <label class="block text-[11px] uppercase tracking-wider font-medium text-zinc-500 mb-1.5">Instruction</label>
+        <textarea [(ngModel)]="schedPrompt" rows="2"
+          placeholder="What should I do at each scheduled run?"
+          class="w-full px-3 py-2 rounded-lg border border-border bg-zinc-950 text-[13px] outline-none focus:border-zinc-500 resize-y"></textarea>
+      </div>
+
+      <div class="flex gap-1 border-b border-border">
+        <button type="button" (click)="schedMode.set('once')"
+          class="px-3 py-1.5 text-[13px] font-medium border-b-2 -mb-px transition-colors"
+          [class]="schedMode() === 'once' ? 'text-zinc-900 border-zinc-900' : 'text-zinc-500 border-transparent hover:text-zinc-900'">
+          One-off
+        </button>
+        <button type="button" (click)="schedMode.set('recurring')"
+          class="px-3 py-1.5 text-[13px] font-medium border-b-2 -mb-px transition-colors"
+          [class]="schedMode() === 'recurring' ? 'text-zinc-900 border-zinc-900' : 'text-zinc-500 border-transparent hover:text-zinc-900'">
+          Recurring
+        </button>
+      </div>
+
+      @if (schedMode() === 'once') {
+        <div class="flex flex-wrap items-center gap-3 text-[13px]">
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="cwhen" value="now" [(ngModel)]="schedWhen"> Run now
+          </label>
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="cwhen" value="later" [(ngModel)]="schedWhen"> At:
+          </label>
+          <input type="datetime-local" [(ngModel)]="schedOnceAt" [disabled]="schedWhen === 'now'"
+            class="px-2 py-1 rounded border border-border bg-zinc-950 text-[13px] outline-none focus:border-zinc-500 disabled:opacity-40">
+        </div>
+      }
+
+      @if (schedMode() === 'recurring') {
+        <div class="flex flex-wrap gap-1.5">
+          @for (p of schedPresets; track p) {
+            <button type="button" (click)="schedPreset.set(p)"
+              class="px-2.5 py-1 rounded-full text-[12px] font-medium border transition-colors"
+              [class]="schedPreset() === p ? 'bg-accent text-white border-accent' : 'bg-surface border-border text-zinc-500 hover:text-zinc-900 hover:border-zinc-600'">
+              {{ presetLabel(p) }}
+            </button>
+          }
+        </div>
+        @if (schedPreset() === 'daily') {
+          <div class="flex items-center gap-2 text-[13px]">
+            <span class="text-zinc-500">At</span>
+            <input type="time" [(ngModel)]="schedDailyTime"
+              class="px-2 py-1 rounded border border-border bg-zinc-950 text-[13px] outline-none focus:border-zinc-500">
+          </div>
+        }
+        @if (schedPreset() === 'weekly') {
+          <div class="flex items-center gap-2 flex-wrap text-[13px]">
+            <span class="text-zinc-500">On</span>
+            <select [(ngModel)]="schedWeeklyDow" class="px-2 py-1 rounded border border-border bg-zinc-950 text-[13px] outline-none">
+              <option value="0">Sunday</option>
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+            </select>
+            <span class="text-zinc-500">at</span>
+            <input type="time" [(ngModel)]="schedWeeklyTime"
+              class="px-2 py-1 rounded border border-border bg-zinc-950 text-[13px] outline-none focus:border-zinc-500">
+          </div>
+        }
+        @if (schedPreset() === 'custom') {
+          <div>
+            <input type="text" [(ngModel)]="schedCustomCron" placeholder="0 9 * * *"
+              class="w-full px-3 py-1.5 rounded border border-border bg-zinc-950 text-[13px] font-mono outline-none focus:border-zinc-500">
+            <p class="text-[11px] text-zinc-500 mt-1">Standard 5-field cron: minute hour dom month dow</p>
+          </div>
+        }
+      }
+
+      <div class="text-[12px] text-zinc-500">Preview: <span class="text-zinc-900">{{ previewSchedule() }}</span></div>
+
+      <div class="flex gap-2 pt-1 flex-wrap">
+        <button (click)="saveSchedule()" [disabled]="schedSaving()"
+          class="px-4 py-1.5 rounded-full bg-accent text-white text-[13px] font-medium hover:bg-accent-hover disabled:opacity-50">
+          {{ schedSaving() ? 'Saving…' : (attachedTask() ? 'Update schedule' : 'Attach schedule') }}
+        </button>
+        @if (attachedTask()) {
+          <button (click)="removeSchedule()" class="px-4 py-1.5 rounded-full border border-red-500/30 text-red-500 text-[13px] hover:bg-red-500/10">Remove</button>
+        }
+        <button (click)="scheduleOpen.set(false)" class="px-4 py-1.5 rounded-full border border-border text-zinc-500 text-[13px] hover:text-zinc-900 hover:border-zinc-600">Cancel</button>
+      </div>
+    </div>
+  }
+
   <div
     #messagesContainer
     class="flex-1 overflow-y-auto px-6 py-6 min-h-0"
@@ -118,6 +246,12 @@
           placeholder="Message {{ auth.assistantName() }}..."
           class="flex-1 px-2 py-2 bg-transparent text-zinc-200 text-sm resize-none outline-none min-h-[36px] max-h-[200px] placeholder:text-zinc-500"
         ></textarea>
+        <button
+          type="button"
+          (click)="scheduleInputAsTask()"
+          class="w-9 h-9 rounded-lg border border-border hover:border-zinc-600 text-zinc-500 hover:text-zinc-900 text-base shrink-0 flex items-center justify-center"
+          title="Schedule this instead of sending"
+        >⏰</button>
         <button
           type="submit"
           class="w-9 h-9 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors shrink-0 flex items-center justify-center"

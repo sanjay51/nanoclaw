@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, OnInit, signal, computed } from '@angular/core';
 import { LowerCasePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
@@ -12,6 +12,17 @@ import { ConnectComponent } from './components/connect/connect.component';
 import { ToastComponent } from './components/toast/toast.component';
 import { ChatSummary } from './shared/types';
 import { relTime } from './shared/utils';
+
+interface ConversationItem {
+  kind: 'chat' | 'chat-with-task' | 'task';
+  jid: string;          // unique key (equal to chat_jid — 1 row per chat)
+  targetJid: string;    // chat_jid to navigate to when clicked
+  name: string;
+  subtitle: string;     // schedule summary for task-bearing rows
+  sortTime: string;
+  channel: string;
+  status: string;       // task status ('active' | 'paused' | '' for plain chats)
+}
 
 @Component({
   selector: 'app-root',
@@ -36,7 +47,6 @@ export class AppComponent implements OnInit {
   navItems = [
     { path: '/chat', label: 'Chat' },
     { path: '/groups', label: 'Channels' },
-    { path: '/tasks', label: 'Tasks' },
     { path: '/personalities', label: 'Personalities' },
     { path: '/credentials', label: 'Credentials' },
   ];
@@ -74,6 +84,97 @@ export class AppComponent implements OnInit {
     const url = this.router.url;
     const m = url.match(/^\/chat\/([^/?#]+)/);
     return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  chatHasTask(jid: string): boolean {
+    const tasks = this.status.status()?.tasks || [];
+    return tasks.some((t: any) => t.chatJid === jid);
+  }
+
+  /**
+   * Unified conversation list — one entry per chat_jid. A chat may optionally
+   * have one attached task (shown as a ⏰ marker on the same row). Non-web
+   * chat_jids only appear if they have a task bound. This enforces the 1:1
+   * chat↔task rule at the UI level; duplicate tasks on the same chat_jid
+   * collapse to the first.
+   */
+  conversations = computed<ConversationItem[]>(() => {
+    const webChats = this.chatList.chats();
+    const s = this.status.status();
+    const tasks: any[] = s?.tasks || [];
+    const groups: any[] = s?.groups || [];
+
+    // Pick the most recently scheduled task per chat_jid so duplicates land on
+    // the latest one rather than whatever happened to be first in the list.
+    const taskByJid = new Map<string, any>();
+    const score = (t: any) => t.nextRun || t.lastRun || t.id || '';
+    for (const t of tasks) {
+      if (!t.chatJid) continue;
+      const prev = taskByJid.get(t.chatJid);
+      if (!prev || score(t) > score(prev)) taskByJid.set(t.chatJid, t);
+    }
+
+    const items: ConversationItem[] = [];
+    const seen = new Set<string>();
+
+    for (const c of webChats) {
+      const t = taskByJid.get(c.jid);
+      items.push({
+        kind: t ? 'chat-with-task' : 'chat',
+        jid: c.jid,
+        targetJid: c.jid,
+        name: c.name,
+        subtitle: t ? t.type + ': ' + t.value : '',
+        sortTime: c.last_message_time || t?.nextRun || t?.lastRun || '',
+        channel: 'web',
+        status: t?.status || '',
+      });
+      seen.add(c.jid);
+    }
+
+    for (const [jid, t] of taskByJid) {
+      if (seen.has(jid)) continue;
+      const g = groups.find((gr) => gr.jid === jid);
+      const fallback = (t.prompt || '').split('\n')[0].slice(0, 60).trim();
+      items.push({
+        kind: 'task',
+        jid,
+        targetJid: jid,
+        name: g?.name || fallback || jid,
+        subtitle: t.type + ': ' + t.value,
+        sortTime: t.nextRun || t.lastRun || '',
+        channel: jid.split(':')[0] || 'unknown',
+        status: t.status,
+      });
+      seen.add(jid);
+    }
+
+    items.sort((a, b) => (b.sortTime || '').localeCompare(a.sortTime || ''));
+    return items;
+  });
+
+  isWebChat(jid: string): boolean {
+    return jid.startsWith('web:');
+  }
+
+  startRenameFromItem(item: ConversationItem, event: Event): void {
+    event.stopPropagation();
+    const chat = this.chatList.chats().find((c) => c.jid === item.jid);
+    if (!chat) return;
+    this.editingJid.set(item.jid);
+    this.editingName = chat.name;
+  }
+
+  async commitRenameFromItem(item: ConversationItem): Promise<void> {
+    const chat = this.chatList.chats().find((c) => c.jid === item.jid);
+    if (!chat) { this.editingJid.set(''); return; }
+    await this.commitRename(chat);
+  }
+
+  async deleteFromItem(item: ConversationItem, event: Event): Promise<void> {
+    const chat = this.chatList.chats().find((c) => c.jid === item.jid);
+    if (!chat) return;
+    await this.deleteChat(chat, event);
   }
 
   async newChat(): Promise<void> {

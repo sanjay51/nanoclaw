@@ -39,7 +39,7 @@ import { relTime } from '../../shared/utils';
               <tbody>
                 @for (t of tasks; track t.id; let i = $index) {
                   <tr class="border-t border-border hover:bg-surface2/60 transition-colors">
-                    <td (click)="router.navigate(['/tasks', t.id])" class="px-5 py-3 cursor-pointer max-w-md">
+                    <td (click)="openTask(t)" class="px-5 py-3 cursor-pointer max-w-md">
                       <div class="truncate text-zinc-200 font-medium">{{ t.prompt }}</div>
                     </td>
                     <td class="px-5 py-3 text-zinc-500"><code class="text-[12px]">{{ t.group }}</code></td>
@@ -86,6 +86,15 @@ export class TasksComponent implements OnInit {
   async ngOnInit(): Promise<void> {
     await this.status.refresh();
     this.tasks = this.status.status()?.tasks || [];
+  }
+
+  openTask(t: any): void {
+    const jid: string = t.chatJid || '';
+    if (jid.startsWith('web:')) {
+      this.router.navigate(['/chat', jid]);
+    } else {
+      this.router.navigate(['/tasks', t.id]);
+    }
   }
 
   async toggle(id: string, newStatus: string): Promise<void> {

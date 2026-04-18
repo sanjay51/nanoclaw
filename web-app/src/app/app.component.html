@@ -42,20 +42,20 @@
           title="Start a new chat">+ New</button>
       </div>
       <div class="flex-1 min-h-0 overflow-y-auto px-2 pb-2 space-y-0.5">
-        @if (chatList.chats().length === 0) {
+        @if (conversations().length === 0) {
           <div class="text-[12px] text-zinc-500 px-2 py-3 text-center">No chats yet</div>
         }
-        @for (chat of chatList.chats(); track chat.jid) {
+        @for (item of conversations(); track item.jid) {
           <div
-            (click)="selectChat(chat.jid)"
+            (click)="selectChat(item.targetJid)"
             class="sidebar-link group flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors"
-            [class.sidebar-active]="chat.jid === currentChatJid()"
+            [class.sidebar-active]="item.targetJid === currentChatJid()"
           >
-            @if (editingJid() === chat.jid) {
+            @if (item.channel === 'web' && editingJid() === item.jid) {
               <input
                 [(ngModel)]="editingName"
-                (blur)="commitRename(chat)"
-                (keydown.enter)="commitRename(chat)"
+                (blur)="commitRenameFromItem(item)"
+                (keydown.enter)="commitRenameFromItem(item)"
                 (keydown.escape)="editingJid.set('')"
                 (click)="$event.stopPropagation()"
                 class="flex-1 min-w-0 px-1 py-0.5 text-xs bg-surface border border-zinc-600 rounded outline-none"
@@ -63,17 +63,27 @@
               />
             } @else {
               <div class="flex-1 min-w-0">
-                <div class="text-[12px] truncate">{{ chat.name }}</div>
-                <div class="text-[10px] text-zinc-500 mt-0.5">{{ rel(chat.last_message_time) }}</div>
+                <div class="text-[12px] truncate flex items-center gap-1.5">
+                  @if (item.kind !== 'chat') { <span class="text-[10px] opacity-70" title="Scheduled">⏰</span> }
+                  <span class="truncate">{{ item.name }}</span>
+                  @if (item.channel !== 'web') { <span class="text-[9px] uppercase tracking-wide text-zinc-500 opacity-70">{{ item.channel }}</span> }
+                  @if (item.status === 'paused') { <span class="text-[9px] uppercase tracking-wide text-amber-600 opacity-80">paused</span> }
+                </div>
+                <div class="text-[10px] text-zinc-500 mt-0.5 truncate">
+                  @if (item.subtitle) { <span class="font-mono">{{ item.subtitle }}</span> &middot; }
+                  {{ rel(item.sortTime) }}
+                </div>
               </div>
-              <div class="opacity-0 group-hover:opacity-100 flex gap-0.5 shrink-0">
-                <button (click)="startRename(chat, $event)"
-                  class="w-5 h-5 rounded hover:bg-black/10 text-zinc-500 hover:text-zinc-900 text-[10px]"
-                  title="Rename">&#9998;</button>
-                <button (click)="deleteChat(chat, $event)"
-                  class="w-5 h-5 rounded hover:bg-red-500/20 text-zinc-500 hover:text-red-500 text-[10px]"
-                  title="Delete">&times;</button>
-              </div>
+              @if (item.channel === 'web') {
+                <div class="opacity-0 group-hover:opacity-100 flex gap-0.5 shrink-0">
+                  <button (click)="startRenameFromItem(item, $event)"
+                    class="w-5 h-5 rounded hover:bg-black/10 text-zinc-500 hover:text-zinc-900 text-[10px]"
+                    title="Rename">&#9998;</button>
+                  <button (click)="deleteFromItem(item, $event)"
+                    class="w-5 h-5 rounded hover:bg-red-500/20 text-zinc-500 hover:text-red-500 text-[10px]"
+                    title="Delete">&times;</button>
+                </div>
+              }
             }
           </div>
         }

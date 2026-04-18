@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
+import { ChatListService } from '../../services/chat-list.service';
 import { ToastService } from '../../services/toast.service';
 import { StatusService } from '../../services/status.service';
 import { GroupDetail } from '../../shared/types';
@@ -57,23 +58,6 @@ type Category = 'Featured' | 'Daily' | 'Research' | 'Reminders' | 'Workflows';
                 <span>{{ scheduleSummary() }}</span>
                 <span class="text-[10px] opacity-70">{{ scheduleOpen() ? '▾' : '▸' }}</span>
               </button>
-
-              <!-- Group chip -->
-              <label class="px-2.5 py-1 rounded-full border border-border bg-surface2 text-[12px] text-zinc-500 flex items-center gap-1.5 cursor-pointer hover:border-zinc-500">
-                <span>in</span>
-                <select [(ngModel)]="selectedGroup" name="group" class="bg-transparent text-zinc-200 outline-none cursor-pointer text-[12px]">
-                  @for (g of groups(); track g.jid) { <option [ngValue]="g">{{ g.name }}</option> }
-                </select>
-              </label>
-
-              <!-- Context chip -->
-              <label class="px-2.5 py-1 rounded-full border border-border bg-surface2 text-[12px] text-zinc-500 flex items-center gap-1.5 cursor-pointer hover:border-zinc-500">
-                <span>context:</span>
-                <select [(ngModel)]="contextMode" name="ctx" class="bg-transparent text-zinc-200 outline-none cursor-pointer text-[12px]">
-                  <option value="isolated">isolated</option>
-                  <option value="group">group</option>
-                </select>
-              </label>
 
               <div class="flex-1"></div>
 
@@ -193,6 +177,7 @@ export class TaskCreateComponent implements OnInit {
   private api = inject(ApiService);
   private toast = inject(ToastService);
   private statusSvc = inject(StatusService);
+  private chatList = inject(ChatListService);
   router = inject(Router);
   auth = inject(AuthService);
 
@@ -205,7 +190,6 @@ export class TaskCreateComponent implements OnInit {
   scheduleOpen = signal(false);
 
   prompt = '';
-  contextMode: 'isolated' | 'group' = 'isolated';
 
   when: 'now' | 'later' = 'now';
   onceAt = this.defaultLocalDateTime();
@@ -275,7 +259,7 @@ export class TaskCreateComponent implements OnInit {
   });
 
   canCreate(): boolean {
-    return !!this.prompt.trim() && !!this.selectedGroup;
+    return !!this.prompt.trim();
   }
 
   async ngOnInit(): Promise<void> {
@@ -336,22 +320,53 @@ export class TaskCreateComponent implements OnInit {
   }
 
   async create(): Promise<void> {
-    if (!this.canCreate()) { this.toast.show('Enter a prompt first', true); return; }
+    const prompt = this.prompt.trim();
+    if (!prompt) { this.toast.show('Enter a prompt first', true); return; }
     const sched = this.buildSchedule();
     if (!sched) return;
 
+    // Every task gets its own fresh web chat (1:1 chat↔task). Name the chat
+    // from the first line of the prompt so it's recognizable in the sidebar.
+    const chatName = prompt.split('\n')[0].slice(0, 60).trim() || 'New scheduled task';
+
     try {
-      const created = await this.api.createTask({
-        prompt: this.prompt.trim(),
-        group_folder: this.selectedGroup!.folder,
-        chat_jid: this.selectedGroup!.jid,
+      const folder = this.webFolder();
+      if (!folder) {
+        this.toast.show('No web group configured — cannot create task', true);
+        return;
+      }
+
+      const newChat = await this.chatList.create(chatName);
+
+      await this.api.createTask({
+        prompt,
+        group_folder: folder,
+        chat_jid: newChat.jid,
         schedule_type: sched.type,
         schedule_value: sched.value,
-        context_mode: this.contextMode,
+        context_mode: 'group',
       });
+
+      // Seed the chat with the prompt so the agent sees the task in history
+      // (future chat-style questions like "what's this task about" can then be
+      // answered). This triggers one agent run now; scheduled runs continue
+      // on top per the configured schedule.
+      try {
+        await this.api.sendMessage(prompt, newChat.jid);
+      } catch { /* non-fatal: the task is still created */ }
+
       this.toast.show('Task created');
-      this.statusSvc.refresh();
-      this.router.navigate(['/tasks', created.id]);
+      await this.statusSvc.refresh();
+      this.router.navigate(['/chat', newChat.jid]);
     } catch (e: any) { this.toast.show(e.message, true); }
+  }
+
+  private webFolder(): string | null {
+    const s = this.statusSvc.status();
+    if (!s) return null;
+    const preferred = s.groups.find((g) => g.jid === 'web:localhost');
+    if (preferred) return preferred.folder;
+    const anyWeb = s.groups.find((g) => g.jid.startsWith('web:'));
+    return anyWeb?.folder || null;
   }
 }

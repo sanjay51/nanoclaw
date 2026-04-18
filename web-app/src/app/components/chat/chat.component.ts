@@ -4,6 +4,7 @@ import {
   OnInit,
   OnDestroy,
   signal,
+  computed,
   ElementRef,
   ViewChild,
 } from '@angular/core';
@@ -17,8 +18,11 @@ import { ChatListService } from '../../services/chat-list.service';
 import { SseService } from '../../services/sse.service';
 import { StatusService } from '../../services/status.service';
 import { ToastService } from '../../services/toast.service';
-import { MessageItem } from '../../shared/types';
+import { MessageItem, TaskSummary } from '../../shared/types';
 import { relTime, renderMarkdown } from '../../shared/utils';
+
+type SchedMode = 'once' | 'recurring';
+type SchedPreset = 'hourly' | 'daily' | 'weekly' | 'custom';
 
 interface LinkPreview {
   url: string;
@@ -78,6 +82,25 @@ export class ChatComponent implements OnInit, OnDestroy {
   rel = relTime;
   suggestions = SUGGESTIONS;
 
+  // Schedule attachment
+  attachedTask = signal<TaskSummary | null>(null);
+  scheduleOpen = signal(false);
+  schedSaving = signal(false);
+  schedRunning = signal(false);
+
+  schedPrompt = '';
+  schedMode = signal<SchedMode>('recurring');
+  schedPreset = signal<SchedPreset>('daily');
+  schedPresets: SchedPreset[] = ['hourly', 'daily', 'weekly', 'custom'];
+  schedWhen: 'now' | 'later' = 'later';
+  schedOnceAt = '';
+  schedDailyTime = '09:00';
+  schedWeeklyDow: '0'|'1'|'2'|'3'|'4'|'5'|'6' = '1';
+  schedWeeklyTime = '09:00';
+  schedCustomCron = '0 9 * * *';
+
+  scheduleSummary = computed(() => this.summarizeTask(this.attachedTask()));
+
   private subs: Subscription[] = [];
 
   async ngOnInit(): Promise<void> {
@@ -90,8 +113,10 @@ export class ChatComponent implements OnInit, OnDestroy {
           this.saveDraft();
           this.chatJid.set(routeJid);
           this.inputText = this.drafts.get(routeJid) ?? '';
+          this.scheduleOpen.set(false);
           setTimeout(() => this.autoResizeNow(), 0);
           await this.loadHistory();
+          this.refreshAttachedTask();
         } else {
           const list = this.chatList.chats();
           if (list.length > 0) {
@@ -369,8 +394,18 @@ export class ChatComponent implements OnInit, OnDestroy {
   private getFolder(): string | null {
     const s = this.status.status();
     if (!s) return null;
-    const preferred = s.groups.find((g) => g.jid === 'web:localhost');
-    if (preferred) return preferred.folder;
+    const jid = this.chatJid();
+
+    // Exact JID match (e.g. tg:123 → telegram_main folder).
+    const exact = s.groups.find((g) => g.jid === jid);
+    if (exact) return exact.folder;
+
+    // Same channel prefix (e.g. web:abc falls back to web:localhost's folder).
+    const prefix = jid.split(':')[0] + ':';
+    const sameChannel = s.groups.find((g) => g.jid.startsWith(prefix));
+    if (sameChannel) return sameChannel.folder;
+
+    // Last resort — any web group.
     const anyWeb = s.groups.find((g) => g.jid.startsWith('web:'));
     return anyWeb?.folder || null;
   }
@@ -406,5 +441,291 @@ export class ChatComponent implements OnInit, OnDestroy {
     const el = event.target as HTMLTextAreaElement;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+  }
+
+  // -------- Schedule attachment --------
+
+  refreshAttachedTask(): void {
+    const jid = this.chatJid();
+    if (!jid) { this.attachedTask.set(null); return; }
+    const tasks = (this.status.status()?.tasks || []) as TaskSummary[];
+    const match = tasks.find((t) => t.chatJid === jid) || null;
+    this.attachedTask.set(match);
+    if (match) this.populateEditorFromTask(match);
+  }
+
+  private populateEditorFromTask(t: TaskSummary): void {
+    this.schedPrompt = t.prompt;
+    if (t.type === 'once') {
+      this.schedMode.set('once');
+      this.schedWhen = 'later';
+      const d = new Date(t.value);
+      if (!isNaN(d.getTime())) this.schedOnceAt = this.toLocalDateTime(d);
+    } else if (t.type === 'cron') {
+      this.schedMode.set('recurring');
+      const parts = (t.value || '').trim().split(/\s+/);
+      if (parts.length === 5) {
+        const [m, h, dom, mon, dow] = parts;
+        const isNum = (s: string) => /^\d+$/.test(s);
+        if (m === '0' && h === '*' && dom === '*' && mon === '*' && dow === '*') {
+          this.schedPreset.set('hourly');
+        } else if (dom === '*' && mon === '*' && dow === '*' && isNum(m) && isNum(h)) {
+          this.schedPreset.set('daily');
+          this.schedDailyTime = h.padStart(2, '0') + ':' + m.padStart(2, '0');
+        } else if (dom === '*' && mon === '*' && isNum(dow) && isNum(m) && isNum(h)) {
+          this.schedPreset.set('weekly');
+          this.schedWeeklyDow = dow as any;
+          this.schedWeeklyTime = h.padStart(2, '0') + ':' + m.padStart(2, '0');
+        } else {
+          this.schedPreset.set('custom');
+          this.schedCustomCron = t.value;
+        }
+      } else {
+        this.schedPreset.set('custom');
+        this.schedCustomCron = t.value;
+      }
+    }
+  }
+
+  summarizeTask(t: TaskSummary | null): string {
+    if (!t) return '';
+    if (t.type === 'once') {
+      const d = new Date(t.value);
+      return isNaN(d.getTime()) ? 'Once' : 'Once at ' + d.toLocaleString();
+    }
+    if (t.type === 'cron') {
+      const parts = (t.value || '').trim().split(/\s+/);
+      if (parts.length === 5) {
+        const [m, h, dom, mon, dow] = parts;
+        const isNum = (s: string) => /^\d+$/.test(s);
+        if (m === '0' && h === '*' && dom === '*' && mon === '*' && dow === '*') return 'Every hour';
+        if (dom === '*' && mon === '*' && dow === '*' && isNum(m) && isNum(h)) {
+          return 'Daily at ' + h.padStart(2, '0') + ':' + m.padStart(2, '0');
+        }
+        if (dom === '*' && mon === '*' && isNum(dow) && isNum(m) && isNum(h)) {
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          return 'Weekly on ' + (days[parseInt(dow, 10)] || dow) + ' at ' + h.padStart(2, '0') + ':' + m.padStart(2, '0');
+        }
+      }
+      return 'Cron: ' + t.value;
+    }
+    return t.type + ': ' + t.value;
+  }
+
+  openScheduleEditor(): void {
+    const existing = this.attachedTask();
+    if (existing) {
+      this.populateEditorFromTask(existing);
+    } else {
+      this.schedPrompt = '';
+      this.schedMode.set('recurring');
+      this.schedPreset.set('daily');
+      this.schedWhen = 'later';
+      this.schedOnceAt = this.toLocalDateTime(new Date(Date.now() + 5 * 60 * 1000));
+    }
+    this.scheduleOpen.set(true);
+  }
+
+  /**
+   * Turn the text currently in the input box into a scheduled task.
+   * Tries to guess a "in N min/hours" clause; falls back to one-off in 5 min.
+   */
+  scheduleInputAsTask(): void {
+    const text = (this.inputText || '').trim();
+    const parsed = this.parseInlineSchedule(text);
+
+    this.schedPrompt = parsed.prompt || text || '';
+    if (parsed.mode === 'once') {
+      this.schedMode.set('once');
+      this.schedWhen = 'later';
+      this.schedOnceAt = this.toLocalDateTime(parsed.when);
+    } else {
+      this.schedMode.set('recurring');
+      this.schedPreset.set('daily');
+      this.schedWhen = 'later';
+      this.schedOnceAt = this.toLocalDateTime(new Date(Date.now() + 5 * 60 * 1000));
+    }
+    this.scheduleOpen.set(true);
+  }
+
+  /**
+   * Best-effort extraction of "in N minutes/hours/days" or "tomorrow" from the
+   * end or beginning of a prompt; returns the cleaned prompt plus a target
+   * datetime. Falls back to now+5min if no cue is found.
+   */
+  private parseInlineSchedule(text: string): { prompt: string; mode: 'once'; when: Date } {
+    const fallback = new Date(Date.now() + 5 * 60 * 1000);
+    if (!text) return { prompt: '', mode: 'once', when: fallback };
+
+    // "in N minutes|mins|hours|hrs|days"
+    const rel = text.match(/\bin\s+(\d+)\s*(minute|min|hour|hr|hrs|day|days)s?\b/i);
+    if (rel) {
+      const n = parseInt(rel[1], 10);
+      const unit = rel[2].toLowerCase();
+      const ms = unit.startsWith('min') ? n * 60_000
+        : unit.startsWith('hr') || unit.startsWith('hour') ? n * 3_600_000
+        : n * 86_400_000;
+      return {
+        prompt: text.replace(rel[0], '').trim(),
+        mode: 'once',
+        when: new Date(Date.now() + ms),
+      };
+    }
+
+    // "tomorrow at 9" / "tomorrow at 9am"
+    const tom = text.match(/\btomorrow(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?\b/i);
+    if (tom) {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      if (tom[1]) {
+        let h = parseInt(tom[1], 10);
+        const m = tom[2] ? parseInt(tom[2], 10) : 0;
+        const ampm = (tom[3] || '').toLowerCase();
+        if (ampm === 'pm' && h < 12) h += 12;
+        if (ampm === 'am' && h === 12) h = 0;
+        d.setHours(h, m, 0, 0);
+      } else {
+        d.setHours(9, 0, 0, 0);
+      }
+      return { prompt: text.replace(tom[0], '').trim(), mode: 'once', when: d };
+    }
+
+    return { prompt: text, mode: 'once', when: fallback };
+  }
+
+  presetLabel(p: SchedPreset): string {
+    return p === 'hourly' ? 'Every hour' : p === 'daily' ? 'Daily' : p === 'weekly' ? 'Weekly' : 'Custom cron';
+  }
+
+  previewSchedule(): string {
+    if (this.schedMode() === 'once') {
+      if (this.schedWhen === 'now') return 'Run now';
+      if (!this.schedOnceAt) return 'Pick a time';
+      const d = new Date(this.schedOnceAt);
+      return isNaN(d.getTime()) ? 'Pick a time' : 'Once at ' + d.toLocaleString();
+    }
+    const p = this.schedPreset();
+    if (p === 'hourly') return 'Every hour';
+    if (p === 'daily') return 'Daily at ' + this.schedDailyTime;
+    if (p === 'weekly') {
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      return 'Weekly on ' + days[parseInt(this.schedWeeklyDow, 10)] + ' at ' + this.schedWeeklyTime;
+    }
+    return 'Cron: ' + this.schedCustomCron;
+  }
+
+  private toLocalDateTime(d: Date): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  private buildSchedule(): { type: 'once' | 'cron'; value: string } | null {
+    if (this.schedMode() === 'once') {
+      if (this.schedWhen === 'now') return { type: 'once', value: new Date().toISOString() };
+      if (!this.schedOnceAt) { this.toast.show('Pick a date/time', true); return null; }
+      return { type: 'once', value: new Date(this.schedOnceAt).toISOString() };
+    }
+    const p = this.schedPreset();
+    if (p === 'hourly') return { type: 'cron', value: '0 * * * *' };
+    if (p === 'daily') {
+      const [h, m] = (this.schedDailyTime || '09:00').split(':');
+      return { type: 'cron', value: `${parseInt(m, 10)} ${parseInt(h, 10)} * * *` };
+    }
+    if (p === 'weekly') {
+      const [h, m] = (this.schedWeeklyTime || '09:00').split(':');
+      return { type: 'cron', value: `${parseInt(m, 10)} ${parseInt(h, 10)} * * ${this.schedWeeklyDow}` };
+    }
+    const cron = this.schedCustomCron.trim();
+    if (!cron) { this.toast.show('Enter a cron expression', true); return null; }
+    return { type: 'cron', value: cron };
+  }
+
+  private allTasksForChat(): any[] {
+    const jid = this.chatJid();
+    return ((this.status.status()?.tasks || []) as any[]).filter((t) => t.chatJid === jid);
+  }
+
+  async saveSchedule(): Promise<void> {
+    const chatJid = this.chatJid();
+    if (!chatJid) { this.toast.show('No chat loaded', true); return; }
+    const prompt = this.schedPrompt.trim();
+    if (!prompt) { this.toast.show('Enter an instruction for each run', true); return; }
+    const sched = this.buildSchedule();
+    if (!sched) return;
+    const folder = this.getFolder();
+    if (!folder) { this.toast.show('No web group folder available', true); return; }
+
+    this.schedSaving.set(true);
+    try {
+      const existing = this.allTasksForChat();
+      if (existing.length > 0) {
+        // Update the first, delete the rest (1:1 enforcement).
+        const [keep, ...extra] = existing;
+        await this.api.updateTask(keep.id, {
+          prompt,
+          schedule_type: sched.type,
+          schedule_value: sched.value,
+        });
+        await Promise.all(extra.map((t) => this.api.deleteTask(t.id).catch(() => null)));
+        this.toast.show(extra.length ? `Schedule updated (${extra.length} duplicate${extra.length > 1 ? 's' : ''} removed)` : 'Schedule updated');
+      } else {
+        await this.api.createTask({
+          prompt,
+          group_folder: folder,
+          chat_jid: chatJid,
+          schedule_type: sched.type,
+          schedule_value: sched.value,
+          context_mode: 'group',
+        });
+        this.toast.show('Schedule attached');
+      }
+      this.scheduleOpen.set(false);
+      await this.status.refresh();
+      this.refreshAttachedTask();
+    } catch (e: any) {
+      this.toast.show(e.message, true);
+    } finally {
+      this.schedSaving.set(false);
+    }
+  }
+
+  async removeSchedule(): Promise<void> {
+    const all = this.allTasksForChat();
+    if (!all.length) return;
+    if (!confirm('Remove the schedule from this chat? The chat itself will stay.')) return;
+    try {
+      await Promise.all(all.map((t) => this.api.deleteTask(t.id).catch(() => null)));
+      this.toast.show('Schedule removed');
+      this.scheduleOpen.set(false);
+      this.attachedTask.set(null);
+      this.status.refresh();
+    } catch (e: any) { this.toast.show(e.message, true); }
+  }
+
+  async schedRunNow(): Promise<void> {
+    const t = this.attachedTask();
+    if (!t) return;
+    this.schedRunning.set(true);
+    try {
+      await this.api.runTask(t.id);
+      this.toast.show('Queued — scheduler will pick this up shortly');
+      this.status.refresh();
+    } catch (e: any) {
+      this.toast.show(e.message, true);
+    } finally {
+      this.schedRunning.set(false);
+    }
+  }
+
+  async togglePause(): Promise<void> {
+    const t = this.attachedTask();
+    if (!t) return;
+    const next = t.status === 'paused' ? 'active' : 'paused';
+    try {
+      await this.api.updateTask(t.id, { status: next });
+      this.toast.show('Schedule ' + (next === 'paused' ? 'paused' : 'resumed'));
+      await this.status.refresh();
+      this.refreshAttachedTask();
+    } catch (e: any) { this.toast.show(e.message, true); }
   }
 }
