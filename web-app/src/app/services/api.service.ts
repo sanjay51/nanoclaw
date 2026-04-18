@@ -52,6 +52,7 @@ export class ApiService {
   updateTask(id: string, data: unknown): Promise<void> { return this.request('PATCH', `/api/tasks/${encodeURIComponent(id)}`, data); }
   deleteTask(id: string): Promise<void> { return this.request('DELETE', `/api/tasks/${encodeURIComponent(id)}`); }
   getTaskLogs(id: string, limit = 20): Promise<TaskRunLog[]> { return this.request('GET', `/api/tasks/${encodeURIComponent(id)}/logs?limit=${limit}`); }
+  runTask(id: string): Promise<{ ok: boolean }> { return this.request('POST', `/api/tasks/${encodeURIComponent(id)}/run`); }
 
   // Sessions
   getSessions(): Promise<SessionInfo[]> { return this.request('GET', '/api/sessions'); }

@@ -6,6 +6,7 @@
     <aside class="w-60 min-w-60 bg-surface border-r border-border flex flex-col min-h-0">
       <div class="px-4 py-3 border-b border-border flex items-center gap-2">
         <h1 class="text-sm font-bold tracking-tight flex-1">{{ auth.assistantName() }}</h1>
+        <button [routerLink]="['/tasks/new']" class="px-2 py-1 rounded bg-accent text-white text-xs font-semibold hover:bg-accent-hover" title="New task">+ New Task</button>
         <button (click)="theme.toggle()" class="text-xs px-1.5 py-0.5 border border-border rounded hover:bg-zinc-800" title="Toggle theme">{{ theme.isDark() ? '\u2600' : '\u263E' }}</button>
         <button (click)="disconnect()" class="text-xs px-1.5 py-0.5 border border-red-500/30 text-red-400 rounded hover:bg-red-500/10" title="Disconnect">&times;</button>
       </div>
