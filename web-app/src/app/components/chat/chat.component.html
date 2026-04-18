@@ -137,11 +137,11 @@
       <div class="h-full flex items-center justify-center text-zinc-500 text-sm">Loading...</div>
     } @else if (messages().length === 0) {
       <div class="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center gap-10 px-4">
-        <div>
-          <h1 class="font-serif text-5xl leading-[1.05] tracking-tight text-zinc-200 mb-1">
+        <div class="space-y-3">
+          <h1 class="font-serif text-[40px] leading-[1.35] text-zinc-200">
             Hey, I'm <span class="italic">{{ auth.assistantName() }}</span>.
           </h1>
-          <p class="font-serif text-5xl leading-[1.05] tracking-tight text-zinc-200">What should we work on?</p>
+          <p class="font-serif text-[40px] leading-[1.35] text-zinc-200">What should we work on?</p>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
           @for (s of suggestions; track s) {

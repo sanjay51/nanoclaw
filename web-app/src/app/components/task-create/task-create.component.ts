@@ -31,11 +31,11 @@ type Category = 'Featured' | 'Daily' | 'Research' | 'Reminders' | 'Workflows';
       <div class="max-w-3xl mx-auto px-6 pt-16 pb-24">
 
         <!-- Hero -->
-        <div class="mb-10">
-          <h1 class="font-serif text-5xl leading-[1.05] tracking-tight text-zinc-200">
+        <div class="mb-10 space-y-3">
+          <h1 class="font-serif text-[40px] leading-[1.35] text-zinc-200">
             Hello <span class="italic">{{ auth.assistantName() }}</span>.
           </h1>
-          <h2 class="font-serif text-5xl leading-[1.05] tracking-tight text-zinc-200 mt-1">
+          <h2 class="font-serif text-[40px] leading-[1.35] text-zinc-200">
             What should I do for you?
           </h2>
         </div>
