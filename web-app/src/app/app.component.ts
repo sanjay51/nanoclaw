@@ -124,7 +124,7 @@ export class AppComponent implements OnInit {
         jid: c.jid,
         targetJid: c.jid,
         name: c.name,
-        subtitle: t ? t.type + ': ' + t.value : '',
+        subtitle: t ? this.humanSchedule(t.type, t.value) : '',
         sortTime: c.last_message_time || t?.nextRun || t?.lastRun || '',
         channel: 'web',
         status: t?.status || '',
@@ -141,7 +141,7 @@ export class AppComponent implements OnInit {
         jid,
         targetJid: jid,
         name: g?.name || fallback || jid,
-        subtitle: t.type + ': ' + t.value,
+        subtitle: this.humanSchedule(t.type, t.value),
         sortTime: t.nextRun || t.lastRun || '',
         channel: jid.split(':')[0] || 'unknown',
         status: t.status,
@@ -155,6 +155,38 @@ export class AppComponent implements OnInit {
 
   isWebChat(jid: string): boolean {
     return jid.startsWith('web:');
+  }
+
+  private humanSchedule(type: string, value: string): string {
+    if (type === 'once') {
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? 'once' : 'once @ ' + d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+    if (type === 'interval') {
+      const ms = parseInt(value, 10);
+      if (isNaN(ms)) return 'interval';
+      if (ms < 60000) return `every ${Math.round(ms / 1000)}s`;
+      if (ms < 3600000) return `every ${Math.round(ms / 60000)}m`;
+      if (ms < 86400000) return `every ${Math.round(ms / 3600000)}h`;
+      return `every ${Math.round(ms / 86400000)}d`;
+    }
+    if (type === 'cron') {
+      const parts = (value || '').trim().split(/\s+/);
+      if (parts.length === 5) {
+        const [m, h, dom, mon, dow] = parts;
+        const isNum = (s: string) => /^\d+$/.test(s);
+        if (m === '0' && h === '*' && dom === '*' && mon === '*' && dow === '*') return 'every hour';
+        if (dom === '*' && mon === '*' && dow === '*' && isNum(m) && isNum(h)) {
+          return `daily @ ${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+        }
+        if (dom === '*' && mon === '*' && isNum(dow) && isNum(m) && isNum(h)) {
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          return `weekly ${days[parseInt(dow, 10)] || dow} @ ${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+        }
+      }
+      return value;
+    }
+    return `${type}: ${value}`;
   }
 
   startRenameFromItem(item: ConversationItem, event: Event): void {

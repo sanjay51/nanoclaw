@@ -101,6 +101,15 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   scheduleSummary = computed(() => this.summarizeTask(this.attachedTask()));
 
+  // Heuristic: does what the user is about to send look like a schedule
+  // change? Surface a hint above the send button so the agent isn't asked to
+  // do something it can't.
+  looksLikeScheduleRequest = computed(() => {
+    const text = (this.inputText || '').trim();
+    if (!text || text.length > 240) return false;
+    return /\b(in\s+\d+\s*(minute|min|hour|hr|hrs|day|days|second|sec|secs)s?\b|tomorrow\b|every\s+(day|hour|week|minute|morning|evening|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|daily|hourly|weekly|at\s+\d{1,2}(:\d{2})?\s*(am|pm)?|remind\s+me\b|send\s+me\b.*\b(later|soon|after|minutes?|hours?|days?)\b|schedule\b)/i.test(text);
+  });
+
   private subs: Subscription[] = [];
 
   async ngOnInit(): Promise<void> {
@@ -679,6 +688,19 @@ export class ChatComponent implements OnInit, OnDestroy {
         });
         this.toast.show('Schedule attached');
       }
+
+      // Rename the chat to reflect the current prompt so the sidebar title
+      // stays in sync. Only applies to web chats (rename API is web-only).
+      if (chatJid.startsWith('web:')) {
+        const desired = prompt.split('\n')[0].slice(0, 60).trim();
+        const current = this.chatList.chats().find((c) => c.jid === chatJid)?.name;
+        const shouldRename =
+          desired && current && current !== desired && (current === 'New chat' || current === 'Web Chat' || this.looksLikePromptDerivedName(current));
+        if (shouldRename) {
+          await this.chatList.rename(chatJid, desired).catch(() => null);
+        }
+      }
+
       this.scheduleOpen.set(false);
       await this.status.refresh();
       this.refreshAttachedTask();
@@ -687,6 +709,14 @@ export class ChatComponent implements OnInit, OnDestroy {
     } finally {
       this.schedSaving.set(false);
     }
+  }
+
+  /** Heuristic: was this chat name auto-derived from a prior prompt? */
+  private looksLikePromptDerivedName(name: string): boolean {
+    // Auto-derived names were generated from the first 60 chars of a prompt.
+    // User-chosen names are typically shorter or obviously custom; this guard
+    // avoids clobbering custom names.
+    return name.length > 30 && !/\s{2,}/.test(name);
   }
 
   async removeSchedule(): Promise<void> {
