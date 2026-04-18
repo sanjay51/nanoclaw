@@ -408,10 +408,7 @@ export async function processTaskIpc(
         };
       }
       updateTask(data.taskId, { status: 'paused' });
-      logger.info(
-        { taskId: data.taskId, sourceGroup },
-        'Task paused via IPC',
-      );
+      logger.info({ taskId: data.taskId, sourceGroup }, 'Task paused via IPC');
       deps.onTasksChanged();
       return { ok: true, taskId: data.taskId, message: 'Task paused' };
     }
@@ -434,10 +431,7 @@ export async function processTaskIpc(
         };
       }
       updateTask(data.taskId, { status: 'active' });
-      logger.info(
-        { taskId: data.taskId, sourceGroup },
-        'Task resumed via IPC',
-      );
+      logger.info({ taskId: data.taskId, sourceGroup }, 'Task resumed via IPC');
       deps.onTasksChanged();
       return { ok: true, taskId: data.taskId, message: 'Task resumed' };
     }
@@ -551,10 +545,7 @@ export async function processTaskIpc(
           error: 'Only main group can refresh group metadata',
         };
       }
-      logger.info(
-        { sourceGroup },
-        'Group metadata refresh requested via IPC',
-      );
+      logger.info({ sourceGroup }, 'Group metadata refresh requested via IPC');
       await deps.syncGroups(true);
       const availableGroups = deps.getAvailableGroups();
       deps.writeGroupsSnapshot(
