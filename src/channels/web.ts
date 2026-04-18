@@ -209,6 +209,7 @@ export class WebChannel implements Channel {
 
     // Route matching
     const taskLogMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/logs$/);
+    const taskRunMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/run$/);
     const taskMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
     const groupMsgMatch = url.pathname.match(
       /^\/api\/groups\/([^/]+)\/messages$/,
@@ -250,6 +251,8 @@ export class WebChannel implements Channel {
       this.handleCreateTask(req, res);
     } else if (taskLogMatch && req.method === 'GET') {
       this.handleGetTaskLogs(taskLogMatch[1], url, res);
+    } else if (taskRunMatch && req.method === 'POST') {
+      this.handleRunTaskNow(taskRunMatch[1], res);
     } else if (taskMatch && req.method === 'GET') {
       this.handleGetTask(taskMatch[1], res);
     } else if (taskMatch && req.method === 'PATCH') {
@@ -674,6 +677,26 @@ export class WebChannel implements Channel {
     const logs = getTaskRunLogs(id, limit);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(logs));
+  }
+
+  private handleRunTaskNow(id: string, res: http.ServerResponse): void {
+    const task = getTaskById(id);
+    if (!task) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Task not found' }));
+      return;
+    }
+    if (task.status === 'paused') {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({ error: 'Task is paused — resume it first to run' }),
+      );
+      return;
+    }
+    updateTask(id, { next_run: new Date().toISOString() });
+    nudgeScheduler();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
   }
 
   // ---- Session endpoints ----
