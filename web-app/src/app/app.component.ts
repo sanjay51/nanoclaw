@@ -46,6 +46,7 @@ export class AppComponent implements OnInit {
 
   navItems = [
     { path: '/chat', label: 'Chat' },
+    { path: '/tasks', label: 'Tasks' },
     { path: '/groups', label: 'Channels' },
     { path: '/personalities', label: 'Personalities' },
     { path: '/credentials', label: 'Credentials' },

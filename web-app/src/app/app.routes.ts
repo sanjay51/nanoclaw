@@ -11,8 +11,8 @@ export const routes: Routes = [
   { path: 'tasks/new', loadComponent: () => import('./components/task-create/task-create.component').then(m => m.TaskCreateComponent) },
   { path: 'personalities', loadComponent: () => import('./components/personalities/personalities.component').then(m => m.PersonalitiesComponent) },
   { path: 'credentials', loadComponent: () => import('./components/credentials/credentials.component').then(m => m.CredentialsComponent) },
-  // Legacy paths → chats.
-  { path: 'tasks', redirectTo: 'chat', pathMatch: 'full' },
+  { path: 'tasks', loadComponent: () => import('./components/tasks/tasks.component').then(m => m.TasksComponent) },
+  // Task detail page is gone — clicking a task routes to its bound chat.
   { path: 'tasks/:id', redirectTo: 'chat', pathMatch: 'full' },
   { path: 'dashboard', redirectTo: 'groups', pathMatch: 'full' },
   { path: 'system', redirectTo: 'groups', pathMatch: 'full' },
