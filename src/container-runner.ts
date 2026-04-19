@@ -53,6 +53,9 @@ export interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  // Partial streaming updates emitted before the final result.
+  // Present iff this output is a delta (result will be null).
+  delta?: { kind: 'text' | 'thinking'; text: string };
 }
 
 interface VolumeMount {

@@ -112,9 +112,10 @@ export interface CredentialItem {
 }
 
 export interface SseEvent {
-  type: 'message' | 'typing';
+  type: 'message' | 'typing' | 'delta';
   chatJid?: string;
   text?: string;
   timestamp?: string;
   isTyping?: boolean;
+  kind?: 'text' | 'thinking';
 }

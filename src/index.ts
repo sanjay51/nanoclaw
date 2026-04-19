@@ -400,6 +400,22 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   const output = await runAgent(group, prompt, chatJid, async (result) => {
     // Streaming output callback — called for each agent result
+    if (result.delta) {
+      // Partial text/thinking delta — forward to web SSE only.
+      // Don't store in DB or hand to the inbound channel; the final
+      // `result` (handled below) is the authoritative message.
+      for (const ch of channels) {
+        if ('broadcastDelta' in ch) {
+          (ch as import('./channels/web.js').WebChannel).broadcastDelta(
+            chatJid,
+            result.delta.kind,
+            result.delta.text,
+          );
+        }
+      }
+      resetIdleTimer();
+      return;
+    }
     if (result.result) {
       const raw =
         typeof result.result === 'string'

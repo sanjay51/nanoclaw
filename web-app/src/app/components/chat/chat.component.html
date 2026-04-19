@@ -157,16 +157,23 @@
         @for (msg of messages(); track $index) {
           <div
             class="px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words max-w-[85%]"
-            [class]="msg.cls === 'user' ? 'self-end bg-user-bg rounded-br-md' : 'self-start bg-bot-bg border border-border rounded-bl-md'"
+            [class]="msg.cls === 'user'
+              ? 'self-end bg-user-bg rounded-br-md'
+              : (msg.kind === 'thinking'
+                  ? 'self-start bg-transparent border border-dashed border-border rounded-bl-md italic text-zinc-500'
+                  : 'self-start bg-bot-bg border border-border rounded-bl-md')"
           >
             <div class="flex gap-2 items-baseline mb-1 text-[11px]">
-              <span [class]="msg.cls === 'bot' ? 'font-semibold text-accent' : 'font-semibold text-zinc-300'">{{ msg.sender }}</span>
+              <span [class]="msg.cls === 'bot' ? 'font-semibold text-accent' : 'font-semibold text-zinc-300'">{{ msg.sender }}{{ msg.kind === 'thinking' ? ' (thinking)' : '' }}</span>
               <span class="text-zinc-600">{{ rel(msg.timestamp) }}</span>
             </div>
             @if (msg.html) {
               <div [innerHTML]="msg.html" class="chat-content"></div>
             } @else {
               {{ msg.text }}
+            }
+            @if (msg.streaming) {
+              <span class="inline-block w-[7px] h-[14px] ml-0.5 bg-zinc-400 align-text-bottom animate-pulse"></span>
             }
             @if (msg.imageUrls) {
               <div class="flex gap-2 flex-wrap mt-1">

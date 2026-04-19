@@ -137,6 +137,15 @@ export class WebChannel implements Channel {
     this.broadcast(`data: ${event}\n\n`);
   }
 
+  /**
+   * Broadcast a partial streaming delta (text or thinking) from the agent.
+   * Web client appends to the in-progress assistant bubble.
+   */
+  broadcastDelta(chatJid: string, kind: 'text' | 'thinking', text: string): void {
+    const event = JSON.stringify({ type: 'delta', chatJid, kind, text });
+    this.broadcast(`data: ${event}\n\n`);
+  }
+
   isConnected(): boolean {
     return this.server !== null && this.server.listening;
   }
@@ -1737,6 +1746,28 @@ function buildHTML(): string {
     padding: 0;
   }
 
+  .msg.thinking {
+    align-self: flex-start;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 13px;
+    opacity: 0.85;
+  }
+
+  .msg.streaming::after {
+    content: '\u258D';
+    display: inline-block;
+    margin-left: 2px;
+    animation: blink 1s steps(2, start) infinite;
+    color: var(--text-muted);
+  }
+
+  @keyframes blink {
+    to { visibility: hidden; }
+  }
+
   .typing {
     align-self: flex-start;
     padding: 10px 14px;
@@ -2129,6 +2160,47 @@ function buildHTML(): string {
     }
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
+    return div;
+  }
+
+  // Streaming bubble state: chatJid -> { bubble, kind, raw }
+  // Deltas append in place; the final message event replaces the bubble
+  // contents with the authoritative text instead of duplicating.
+  const streamState = {};
+
+  function appendDelta(chatJid, kind, text) {
+    empty.style.display = 'none';
+    typing.classList.remove('visible');
+    let st = streamState[chatJid];
+    if (!st || st.kind !== kind) {
+      const cls = kind === 'thinking' ? 'thinking streaming' : 'bot streaming';
+      const bubble = addMsg('', cls);
+      st = { bubble, kind, raw: '' };
+      streamState[chatJid] = st;
+    }
+    st.raw += text;
+    if (kind === 'thinking') {
+      st.bubble.textContent = st.raw;
+    } else {
+      st.bubble.innerHTML = renderMarkdown(st.raw);
+    }
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function finalizeStream(chatJid, finalText) {
+    const st = streamState[chatJid];
+    if (st && st.kind === 'text') {
+      st.bubble.classList.remove('streaming');
+      st.bubble.innerHTML = renderMarkdown(finalText);
+      delete streamState[chatJid];
+      return true;
+    }
+    // Drop any orphan thinking bubble's streaming cursor
+    if (st) {
+      st.bubble.classList.remove('streaming');
+      delete streamState[chatJid];
+    }
+    return false;
   }
 
   function renderMarkdown(text) {
@@ -2189,8 +2261,13 @@ function buildHTML(): string {
         const data = JSON.parse(e.data);
         if (data.type === 'message') {
           typing.classList.remove('visible');
-          addMsg(data.text, 'bot');
-          // Switch to chat if a message arrives while viewing detail
+          // If a bubble was already streamed for this chat, finalize it in
+          // place instead of adding a duplicate.
+          const replaced = finalizeStream(data.chatJid, data.text);
+          if (!replaced) addMsg(data.text, 'bot');
+          if (detailPanel.classList.contains('visible')) showChat();
+        } else if (data.type === 'delta') {
+          appendDelta(data.chatJid, data.kind, data.text);
           if (detailPanel.classList.contains('visible')) showChat();
         } else if (data.type === 'typing') {
           if (data.isTyping) {

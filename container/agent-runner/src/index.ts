@@ -40,6 +40,9 @@ interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  // Partial streaming updates emitted before the final result.
+  // Present iff this output is a delta (result will be null).
+  delta?: { kind: 'text' | 'thinking'; text: string };
 }
 
 interface SessionEntry {
@@ -577,6 +580,7 @@ async function runQuery(
           { hooks: [createPreCompactHook(containerInput.assistantName)] },
         ],
       },
+      includePartialMessages: true,
     },
   })) {
     messageCount++;
@@ -588,6 +592,28 @@ async function runQuery(
 
     if (message.type === 'assistant' && 'uuid' in message) {
       lastAssistantUuid = (message as { uuid: string }).uuid;
+    }
+
+    // Stream partial text/thinking deltas to the host so the web UI can
+    // render them live, character by character. Tool input deltas are
+    // intentionally ignored — too noisy for chat surfaces.
+    if (message.type === 'stream_event' && 'event' in message) {
+      const ev = (message as { event?: { type?: string; delta?: { type?: string; text?: string; thinking?: string } } }).event;
+      if (ev?.type === 'content_block_delta' && ev.delta) {
+        if (ev.delta.type === 'text_delta' && ev.delta.text) {
+          writeOutput({
+            status: 'success',
+            result: null,
+            delta: { kind: 'text', text: ev.delta.text },
+          });
+        } else if (ev.delta.type === 'thinking_delta' && ev.delta.thinking) {
+          writeOutput({
+            status: 'success',
+            result: null,
+            delta: { kind: 'thinking', text: ev.delta.thinking },
+          });
+        }
+      }
     }
 
     if (message.type === 'system' && message.subtype === 'init') {

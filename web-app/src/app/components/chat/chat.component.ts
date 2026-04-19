@@ -38,6 +38,8 @@ interface ChatMsg {
   html?: SafeHtml;
   imageUrls?: string[];
   previews?: LinkPreview[];
+  streaming?: boolean;
+  kind?: 'text' | 'thinking';
 }
 
 const SUGGESTIONS = [
@@ -112,6 +114,11 @@ export class ChatComponent implements OnInit, OnDestroy {
 
   private subs: Subscription[] = [];
 
+  // Streaming state keyed by chatJid. Deltas append to the in-progress
+  // bubble; when the authoritative message arrives we replace its contents
+  // rather than adding a duplicate.
+  private streamingByJid = new Map<string, { index: number; kind: 'text' | 'thinking' }>();
+
   async ngOnInit(): Promise<void> {
     this.chatList.start();
 
@@ -142,12 +149,28 @@ export class ChatComponent implements OnInit, OnDestroy {
         if (ev.type === 'message' && ev.text) {
           const jid = ev.chatJid || '';
           if (jid === this.chatJid()) {
-            this.addMessage(
+            const replaced = this.finalizeStream(
+              jid,
               ev.text,
-              'bot',
-              this.auth.assistantName(),
               ev.timestamp || new Date().toISOString(),
             );
+            if (!replaced) {
+              this.addMessage(
+                ev.text,
+                'bot',
+                this.auth.assistantName(),
+                ev.timestamp || new Date().toISOString(),
+              );
+            }
+            this.typing.set(false);
+          } else {
+            // Message for a different chat — drop any stale stream state for it.
+            this.streamingByJid.delete(jid);
+          }
+        } else if (ev.type === 'delta' && ev.text && ev.kind) {
+          const jid = ev.chatJid || '';
+          if (jid === this.chatJid()) {
+            this.appendDelta(jid, ev.kind, ev.text);
             this.typing.set(false);
           }
         } else if (ev.type === 'typing') {
@@ -179,6 +202,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   async loadHistory(): Promise<void> {
     const jid = this.chatJid();
     this.typing.set(false);
+    this.streamingByJid.delete(jid);
     if (!jid) {
       this.messages.set([]);
       return;
@@ -348,6 +372,80 @@ export class ChatComponent implements OnInit, OnDestroy {
     };
     this.messages.update((msgs) => [...msgs, msg]);
     setTimeout(() => this.scrollBottom(), 20);
+  }
+
+  // Append a text/thinking delta to the in-progress bubble, or start one.
+  private appendDelta(
+    jid: string,
+    kind: 'text' | 'thinking',
+    text: string,
+  ): void {
+    const existing = this.streamingByJid.get(jid);
+    this.messages.update((msgs) => {
+      const next = [...msgs];
+      if (existing && next[existing.index] && existing.kind === kind) {
+        const prev = next[existing.index];
+        const combined = prev.text + text;
+        next[existing.index] = {
+          ...prev,
+          text: combined,
+          html: kind === 'thinking'
+            ? undefined
+            : this.renderHtml(combined, 'bot'),
+        };
+      } else {
+        const newIdx = next.length;
+        next.push({
+          text,
+          cls: 'bot',
+          sender: this.auth.assistantName(),
+          timestamp: new Date().toISOString(),
+          html: kind === 'thinking' ? undefined : this.renderHtml(text, 'bot'),
+          streaming: true,
+          kind,
+        });
+        this.streamingByJid.set(jid, { index: newIdx, kind });
+      }
+      return next;
+    });
+    setTimeout(() => this.scrollBottom(), 10);
+  }
+
+  // On authoritative message arrival: replace the streaming text bubble's
+  // content with the canonical text rather than duplicating.
+  private finalizeStream(
+    jid: string,
+    finalText: string,
+    timestamp: string,
+  ): boolean {
+    const st = this.streamingByJid.get(jid);
+    if (!st) return false;
+    this.streamingByJid.delete(jid);
+    if (st.kind !== 'text') {
+      // Only a thinking bubble was streamed — drop streaming flag on it and
+      // let the caller add the real response as a new bubble.
+      this.messages.update((msgs) => {
+        const next = [...msgs];
+        if (next[st.index]) next[st.index] = { ...next[st.index], streaming: false };
+        return next;
+      });
+      return false;
+    }
+    this.messages.update((msgs) => {
+      const next = [...msgs];
+      if (!next[st.index]) return msgs;
+      next[st.index] = {
+        ...next[st.index],
+        text: finalText,
+        timestamp,
+        html: this.renderHtml(finalText, 'bot'),
+        previews: this.extractPreviews(finalText),
+        streaming: false,
+      };
+      return next;
+    });
+    setTimeout(() => this.scrollBottom(), 10);
+    return true;
   }
 
   private toMsg(m: MessageItem): ChatMsg {
