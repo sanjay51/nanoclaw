@@ -62,12 +62,23 @@ Follow `UX-REVIEWER.md` in this skill folder (which extends `../code-assist-shar
 Follow shared PIPELINE.md Phase 5. Reco-specific:
 - **Set the task status** to **"In Review"** on the project board.
 - **Add the PR link** to the task on the board.
+- **Deploy to alpha** — after the PR is created and the board updated, run `npm run deploy-static-alpha` from the repo root to push the change to the alpha environment. This is mandatory for every task, not optional.
+  - Run from the PR branch (the change you just shipped, not `main`).
+  - **`npm run deploy-static-alpha` handles the build itself.** Do not run `npm run build`, `ng build`, or any other build command before or after the deploy — that's redundant and wastes time. Just run the one deploy command.
+  - If the deploy fails, do not mark the task as complete — fix the failure or escalate. A successful PR with a failed deploy is still an unfinished task.
+  - Capture the deploy command's final summary line (URL or version tag) for the Telegram summary.
 
 ---
 
 ## Completion Summary Format (Telegram)
 
 Use the format in `../code-assist-shared/PIPELINE.md`. Title: `🚀 Task Complete: [Task Title]`.
+
+Add a line below the PR link:
+
+```
+🚀 Alpha deploy: <result — URL/version, or "FAILED: <reason>">
+```
 
 ---
 

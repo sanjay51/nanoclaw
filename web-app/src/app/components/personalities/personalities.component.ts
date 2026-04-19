@@ -189,7 +189,7 @@ interface Section {
     :host ::ng-deep .editorjs-wrapper .ce-code,
     :host ::ng-deep .editorjs-wrapper .ce-quote,
     :host ::ng-deep .editorjs-wrapper .cdx-list {
-      color: #f4f4f5;
+      color: inherit;
     }
     :host ::ng-deep .editorjs-wrapper .ce-paragraph {
       font-size: 14px;
@@ -210,7 +210,8 @@ interface Section {
     :host ::ng-deep .editorjs-wrapper .cdx-quote__text {
       border-left: 3px solid #3b82f6;
       padding-left: 12px;
-      color: #d4d4d8;
+      color: inherit;
+      opacity: 0.85;
       font-style: italic;
     }
     :host ::ng-deep .editorjs-wrapper .cdx-quote__caption {
