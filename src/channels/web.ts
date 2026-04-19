@@ -141,7 +141,11 @@ export class WebChannel implements Channel {
    * Broadcast a partial streaming delta (text or thinking) from the agent.
    * Web client appends to the in-progress assistant bubble.
    */
-  broadcastDelta(chatJid: string, kind: 'text' | 'thinking', text: string): void {
+  broadcastDelta(
+    chatJid: string,
+    kind: 'text' | 'thinking',
+    text: string,
+  ): void {
     const event = JSON.stringify({ type: 'delta', chatJid, kind, text });
     this.broadcast(`data: ${event}\n\n`);
   }
