@@ -7,6 +7,7 @@ set -euo pipefail
 DISPLAY_NUM=99
 VNC_PORT=5950
 CDP_PORT=9222
+VNC_SERVICE=x11vnc-chrome.service
 
 usage() {
   cat <<EOF
@@ -62,12 +63,8 @@ show_status() {
     printf "  %-25s %s\n" "$svc" "$state"
   done
 
-  vnc_pid=$(pgrep -f "x11vnc -display :${DISPLAY_NUM}.*${VNC_PORT}" 2>/dev/null || true)
-  if [[ -n "$vnc_pid" ]]; then
-    printf "  %-25s %s\n" "x11vnc (:${DISPLAY_NUM})" "active (pid $vnc_pid, port $VNC_PORT)"
-  else
-    printf "  %-25s %s\n" "x11vnc (:${DISPLAY_NUM})" "inactive"
-  fi
+  vnc_state=$(systemctl --user is-active "$VNC_SERVICE" 2>/dev/null || true)
+  printf "  %-25s %s (port $VNC_PORT)\n" "$VNC_SERVICE" "$vnc_state"
 
   echo ""
   echo "=== CDP ==="
@@ -80,19 +77,19 @@ show_status() {
 }
 
 start_vnc() {
-  # Kill any existing VNC on this display/port
-  stop_vnc
-  x11vnc -display ":${DISPLAY_NUM}" -nopw -forever -noxdamage -rfbport "$VNC_PORT" 2>/dev/null &
-  disown
+  # Kill any stray unmanaged x11vnc on this display to avoid port conflicts
+  pkill -f "x11vnc -display :${DISPLAY_NUM}" 2>/dev/null || true
+  systemctl --user restart "$VNC_SERVICE"
   sleep 1
-  if pgrep -f "x11vnc -display :${DISPLAY_NUM}.*${VNC_PORT}" >/dev/null 2>&1; then
-    echo "VNC running on port $VNC_PORT (display :${DISPLAY_NUM})"
+  if [[ "$(systemctl --user is-active "$VNC_SERVICE" 2>/dev/null)" == "active" ]]; then
+    echo "VNC running on port $VNC_PORT (display :${DISPLAY_NUM}, via $VNC_SERVICE)"
   else
-    echo "Warning: VNC failed to start" >&2
+    echo "Warning: $VNC_SERVICE failed to start" >&2
   fi
 }
 
 stop_vnc() {
+  systemctl --user stop "$VNC_SERVICE" 2>/dev/null || true
   pkill -f "x11vnc -display :${DISPLAY_NUM}" 2>/dev/null || true
 }
 
